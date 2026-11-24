@@ -65,13 +65,11 @@ def check(state: dict, log=print) -> list[str]:
         hits = _match(text)
         if not text or not hits:
             continue
-        excerpt = text if len(text) < 900 else text[:900] + "…"
+        excerpt = text if len(text) < 280 else text[:280] + "…"
         msgs.append(
-            "📣 <b>Truth Social : Donald J. Trump</b>\n"
-            f"🔎 mots-clés : {html.escape(', '.join(hits[:5]))}\n"
-            f"⏱️ <b>Délai : {delay.since_timestamp(p.get('created_at', ''))}</b> depuis la publication\n\n"
-            f"{html.escape(excerpt)}\n"
-            f'<a href="{html.escape(p.get("url") or "")}">📎 Voir le post</a>'
+            f"📣 <b>Trump sur Truth Social</b> · ⏱️ il y a <b>{delay.since_timestamp(p.get('created_at', ''))}</b>\n"
+            f"« {html.escape(excerpt)} »\n"
+            f'<a href="{html.escape(p.get("url") or "")}">📎 Post</a>'
         )
     state["truth_last_id"] = str(last)
     return msgs
