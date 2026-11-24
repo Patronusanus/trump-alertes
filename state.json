@@ -29,7 +29,7 @@
   "https://extapps2.oge.gov/201/Presiden.nsf/PAS+Index/E9C024E25C9E4B2085258CEB006E7E23/$FILE/Donald-J-Trump-08.12.2025-278T.pdf",
   "https://extapps2.oge.gov/201/Presiden.nsf/PAS+Index/F9CA13B970439E8F85258E27002DDF15/$FILE/Donald-J-Trump-06.25.2026-278T%20(2).pdf"
  ],
- "tg_offset": 401723310,
+ "tg_offset": 401723311,
  "sec_seen": [
   "0000890163-06-000623",
   "0000891092-01-500491",
@@ -199,5 +199,6 @@
   "tx:0xf94ece9c9d6cfce2b4824d1da3bb540be6babfbc145f3d6555e37c0818bc0feb",
   "tx:0xfdef5dc2208d620ba64e021123db5c9ab05d8d61b0c38c8015d3d7c8de128164"
  ],
- "keepalive_week": "2026-W48"
+ "keepalive_week": "2026-W48",
+ "initialized": true
 }
