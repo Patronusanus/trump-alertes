@@ -19,7 +19,7 @@ Fonctionnement d'un passage OGE :
 
 Usage :
   python bot.py            # un passage (c'est ce que lance GitHub Actions)
-  python bot.py --loop 120 # tourne en continu, vérifie toutes les 120 s
+  python bot.py --loop 60  # tourne en continu, vérifie toutes les 60 s
   python bot.py --demo     # renvoie la dernière déclaration (pour tester)
 """
 from __future__ import annotations
@@ -332,7 +332,7 @@ WELCOME = (
 )
 
 
-def run_once(demo: bool = False) -> bool:
+def run_once(demo: bool = False, oge: bool = True) -> bool:
     state = load_state()
     # Premier lancement = jamais initialisé ET aucune déclaration encore vue.
     first_run = not state.get("initialized") and not state.get("seen")
@@ -354,6 +354,9 @@ def run_once(demo: bool = False) -> bool:
             log(f"{name} : erreur {ex!r}")
 
     # 2) Déclarations OGE (peut prendre quelques minutes à cause de l'OCR).
+    if not oge and state.get("initialized"):
+        save_state(state)
+        return sent_any
     try:
         filings = fetch_filings()
     except Exception as ex:
@@ -390,20 +393,58 @@ def run_once(demo: bool = False) -> bool:
     return sent_any or bool(new)
 
 
+def git_save():
+    """Enregistre state.json dans le dépôt (mode GitHub Actions en continu)."""
+    import subprocess
+
+    def git(*a):
+        return subprocess.run(["git", *a], capture_output=True, text=True)
+
+    if not git("status", "--porcelain", str(STATE_FILE)).stdout.strip():
+        return
+    git("config", "user.name", "trump-bot")
+    git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+    git("add", str(STATE_FILE))
+    git("commit", "-q", "-m", "Mise à jour de l'état du bot")
+    for _ in range(3):
+        if git("pull", "-q", "--rebase", "-X", "theirs").returncode == 0 and git("push", "-q").returncode == 0:
+            return
+        time.sleep(5)
+    log("git push impossible (on réessaiera)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--loop", type=int, default=0, help="vérifie en continu toutes les N secondes")
+    ap.add_argument("--oge-every", type=int, default=300, help="en continu : OGE toutes les N secondes")
+    ap.add_argument("--max-minutes", type=float, default=0, help="en continu : s'arrête après N minutes")
+    ap.add_argument("--git-commit", action="store_true", help="enregistre state.json dans git à chaque changement")
     ap.add_argument("--demo", action="store_true", help="envoie la dernière déclaration pour tester")
     args = ap.parse_args()
-    if args.loop:
-        while True:
-            try:
-                run_once()
-            except Exception as e:
-                log("Erreur:", repr(e))
-            time.sleep(args.loop)
-    else:
+    if not args.loop:
         run_once(demo=args.demo)
+        if args.git_commit:
+            git_save()
+        return
+    start = time.monotonic()
+    last_oge = -1e9
+    demo = args.demo
+    while True:
+        t0 = time.monotonic()
+        do_oge = t0 - last_oge >= args.oge_every
+        try:
+            run_once(demo=demo, oge=do_oge)
+            demo = False
+            if do_oge:
+                last_oge = t0
+        except Exception as e:
+            log("Erreur:", repr(e))
+        if args.git_commit:
+            git_save()
+        if args.max_minutes and time.monotonic() - start > args.max_minutes * 60:
+            log("Durée maximale atteinte, arrêt (le prochain lancement prend le relais).")
+            return
+        time.sleep(max(1, args.loop - (time.monotonic() - t0)))
 
 
 if __name__ == "__main__":
