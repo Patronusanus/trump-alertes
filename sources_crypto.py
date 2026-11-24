@@ -12,8 +12,10 @@ des inconnus). On ne signale donc que :
   - les opérations ENVOYÉES par le portefeuille (c'est lui qui agit) ;
   - les jetons reçus ayant une vraie valeur (≥ CRYPTO_MIN_USD, 1 000 $ par défaut).
 
-Pour ajouter des portefeuilles (ex. ceux de World Liberty Financial identifiés
-sur Arkham) : variable WATCH_WALLETS="0xadresse:Nom,0xautre:Nom2".
+Un échange (envoi d'un jeton + réception d'un autre dans la même transaction)
+est affiché comme un ordre : « 🔄 ACHAT X · VENTE Y ».
+
+Pour ajouter des portefeuilles : variable WATCH_WALLETS="0xadresse:Nom,0xautre:Nom2".
 """
 from __future__ import annotations
 
@@ -24,7 +26,12 @@ import requests
 
 import delay
 
-WALLETS = {"0x94845333028B1204Fbe14E1278Fd4Adde46B22ce": "Donald Trump (portefeuille Ethereum)"}
+WALLETS = {
+    "0x94845333028B1204Fbe14E1278Fd4Adde46B22ce": "Donald Trump (portefeuille Ethereum)",
+    # Trésorerie de World Liberty Financial (société crypto de la famille Trump),
+    # étiquetée « World Liberty: Multisig » sur Blockscout, vérifié le 24/11/2026.
+    "0x5be9a4959308A0D0c7bC0870E319314d8D957dBB": "World Liberty Financial (trésorerie)",
+}
 for item in filter(None, (x.strip() for x in os.environ.get("WATCH_WALLETS", "").split(","))):
     addr, _, label = item.partition(":")
     WALLETS[addr.strip()] = label.strip() or addr.strip()
@@ -60,70 +67,106 @@ def _short(a: str) -> str:
 
 def check(state: dict, log=print) -> list[str]:
     seen = set(state.get("crypto_seen", []))
-    first = "crypto_seen" not in state
+    # Portefeuilles déjà initialisés : un portefeuille ajouté démarre en silence.
+    ready = set(state.get("crypto_ready", []))
+    if "crypto_seen" in state and "crypto_ready" not in state:
+        ready = {"0x94845333028B1204Fbe14E1278Fd4Adde46B22ce".lower()}
     msgs = []
     for addr, label in WALLETS.items():
         low = addr.lower()
-        events = []
+        silent = low not in ready
         try:
-            for t in _get(f"/addresses/{addr}/token-transfers").get("items", []):
-                key = f"tok:{t['transaction_hash']}:{t.get('log_index')}"
-                events.append((key, "token", t))
-            for t in _get(f"/addresses/{addr}/transactions").get("items", []):
-                events.append((f"tx:{t['hash']}", "tx", t))
+            toks = _get(f"/addresses/{addr}/token-transfers").get("items", [])
+            txs = _get(f"/addresses/{addr}/transactions").get("items", [])
         except Exception as ex:
             log(f"Crypto {label} : erreur {ex!r}")
             continue
-        for key, kind, t in reversed(events):
+        ready.add(low)
+        # Regroupe les transferts de jetons par transaction (pour voir les échanges).
+        groups: dict[str, list] = {}
+        for t in toks:
+            key = f"tok:{t['transaction_hash']}:{t.get('log_index')}"
             if key in seen:
                 continue
             seen.add(key)
-            if first:
+            groups.setdefault(t["transaction_hash"], []).append(t)
+        for t in reversed(txs):
+            key = f"tx:{t['hash']}"
+            if key in seen:
                 continue
-            msg = _describe(addr, low, label, kind, t)
+            seen.add(key)
+            if silent or t["hash"] in groups:
+                continue
+            msg = _describe_tx(low, label, t)
             if msg:
                 log("CRYPTO NOUVEAU :", label, key)
                 msgs.append(msg)
-    state["crypto_seen"] = sorted(seen)[-3000:]
+        if silent:
+            continue
+        for h, items in reversed(list(groups.items())):
+            msg = _describe_tokens(low, label, h, items)
+            if msg:
+                log("CRYPTO NOUVEAU :", label, h)
+                msgs.append(msg)
+    state["crypto_seen"] = sorted(seen)[-5000:]
+    state["crypto_ready"] = sorted(ready)
     return msgs
 
 
-def _describe(addr, low, label, kind, t) -> str | None:
+def _leg(t, low):
+    tok = t.get("token") or {}
+    qty = _amount(t.get("total"))
+    rate = float(tok["exchange_rate"]) if tok.get("exchange_rate") else None
+    usd = qty * rate if (qty is not None and rate) else None
+    out = t["from"]["hash"].lower() == low
+    return out, tok.get("symbol") or "?", qty, usd
+
+
+def _txt_leg(sym, qty, usd):
+    q = _fmt(qty) if qty is not None else "1 NFT"
+    v = f" (≈ {_fmt(usd)} $)" if usd else ""
+    return f"<b>{html.escape(q)} {html.escape(sym)}</b>{v}"
+
+
+def _footer(label, ts, tx):
     e = html.escape
-    if kind == "token":
-        frm, to = t["from"]["hash"].lower(), t["to"]["hash"].lower()
-        tok = t.get("token") or {}
-        sym = tok.get("symbol") or "?"
-        qty = _amount(t.get("total"))
-        rate = float(tok["exchange_rate"]) if tok.get("exchange_rate") else None
-        usd = qty * rate if (qty is not None and rate) else None
-        outgoing = frm == low
-        if not outgoing and (usd is None or usd < MIN_USD):
-            return None  # spam / poussière
-        sens = "🔴 ENVOI/VENTE" if outgoing else "🟢 RÉCEPTION/ACHAT"
-        other = to if outgoing else frm
-        value = f" (≈ {_fmt(usd)} $)" if usd else ""
-        qty_s = _fmt(qty) if qty is not None else "1 NFT"
-        tx = t["transaction_hash"]
-        ts = t.get("timestamp", "")
-        when = ts[:16].replace("T", " ")
-    else:
-        if (t.get("from") or {}).get("hash", "").lower() != low:
-            # ETH reçu : on ne garde que les montants significatifs
-            eth = int(t.get("value") or 0) / 1e18
-            if eth < float(os.environ.get("CRYPTO_MIN_ETH", "0.5")):
-                return None
-            sens, sym, qty_s, value, other = "🟢 RÉCEPTION", "ETH", _fmt(eth), "", t["from"]["hash"]
-        else:
-            eth = int(t.get("value") or 0) / 1e18
-            method = t.get("method") or "transaction"
-            sens, sym, qty_s, value = f"🔴 TRANSACTION ({method})", "ETH", _fmt(eth), ""
-            other = (t.get("to") or {}).get("hash", "?")
-        tx = t["hash"]
-        ts = t.get("timestamp") or ""
-        when = ts[:16].replace("T", " ")
     return (
-        f"{sens} <b>{e(qty_s)} {e(sym)}</b>{value}\n"
         f"⛓️ {e(label)} · ⏱️ il y a <b>{delay.since_timestamp(ts)}</b>\n"
         f'<a href="https://etherscan.io/tx/{e(tx)}">📎 Transaction</a>'
     )
+
+
+def _describe_tokens(low, label, tx, items) -> str | None:
+    legs = [_leg(t, low) for t in items]
+    outs = [l for l in legs if l[0]]
+    ins = [l for l in legs if not l[0] and l[3] is not None and l[3] >= MIN_USD]
+    ins_any = [l for l in legs if not l[0] and l[3] is not None]
+    ts = items[0].get("timestamp", "")
+    if outs and ins_any:  # échange dans la même transaction = un ordre
+        best_in = max(ins_any, key=lambda l: l[3] or 0)
+        best_out = max(outs, key=lambda l: l[3] or 0)
+        return (
+            f"🔄 <b>ACHAT</b> {_txt_leg(*best_in[1:])}\n"
+            f"     <b>VENTE</b> {_txt_leg(*best_out[1:])}\n" + _footer(label, ts, tx)
+        )
+    if outs:
+        best = max(outs, key=lambda l: l[3] or 0)
+        if best[3] is None and best[1] == "?":
+            return None
+        return f"🔴 ENVOI {_txt_leg(*best[1:])}\n" + _footer(label, ts, tx)
+    if ins:  # jetons sans valeur reçus = spam, ignorés
+        best = max(ins, key=lambda l: l[3])
+        return f"🟢 RÉCEPTION {_txt_leg(*best[1:])}\n" + _footer(label, ts, tx)
+    return None
+
+
+def _describe_tx(low, label, t) -> str | None:
+    eth = int(t.get("value") or 0) / 1e18
+    ts = t.get("timestamp") or ""
+    if (t.get("from") or {}).get("hash", "").lower() != low:
+        if eth < float(os.environ.get("CRYPTO_MIN_ETH", "0.5")):
+            return None
+        return f"🟢 RÉCEPTION <b>{_fmt(eth)} ETH</b>\n" + _footer(label, ts, t["hash"])
+    if eth <= 0:
+        return None  # appel de contrat sans ETH (approbation, etc.)
+    return f"🔴 ENVOI <b>{_fmt(eth)} ETH</b>\n" + _footer(label, ts, t["hash"])
