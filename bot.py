@@ -56,6 +56,8 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 MAX_LINES = int(os.environ.get("MAX_LINES", "5"))
 SEND_CSV = os.environ.get("SEND_CSV", "0") == "1"
+# OGE (portefeuille boursier perso de Trump) : 30–45 jours de retard. Coupé par défaut.
+OGE_ENABLED = os.environ.get("OGE_ENABLED", "0") == "1"
 HEADERS = {"User-Agent": "Mozilla/5.0 (disclosure-alert-bot)"}
 COLUMNS = ["docDate", "title", "type", "name", "agency", "level"]
 
@@ -364,7 +366,7 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
             log(f"{name} : erreur {ex!r}")
 
     # 2) Déclarations OGE (peut prendre quelques minutes à cause de l'OCR).
-    if not oge and state.get("initialized"):
+    if (not oge or not OGE_ENABLED) and state.get("initialized"):
         save_state(state)
         return sent_any
     try:
