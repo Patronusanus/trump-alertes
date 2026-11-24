@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # pour se réactiver tout seul (pause GitHub après 60 j)
 
 concurrency:
   group: trump-bot
@@ -32,6 +33,12 @@ jobs:
       - name: Token Telegram manquant
         if: env.HAS_TOKEN != 'true'
         run: echo "Ajoute le secret TELEGRAM_BOT_TOKEN (voir README) pour activer le bot."
+
+      - name: Rester actif (anti-pause des 60 jours)
+        if: env.HAS_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/bot.yml/enable" || true
 
       - uses: actions/checkout@v4
         if: env.HAS_TOKEN == 'true'
