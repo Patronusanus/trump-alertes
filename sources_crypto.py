@@ -100,7 +100,7 @@ def _describe(addr, low, label, kind, t) -> str | None:
         outgoing = frm == low
         if not outgoing and (usd is None or usd < MIN_USD):
             return None  # spam / poussière
-        sens = "🔴 ENVOI / VENTE" if outgoing else "🟢 RÉCEPTION / ACHAT"
+        sens = "🔴 ENVOI/VENTE" if outgoing else "🟢 RÉCEPTION/ACHAT"
         other = to if outgoing else frm
         value = f" (≈ {_fmt(usd)} $)" if usd else ""
         qty_s = _fmt(qty) if qty is not None else "1 NFT"
@@ -123,9 +123,7 @@ def _describe(addr, low, label, kind, t) -> str | None:
         ts = t.get("timestamp") or ""
         when = ts[:16].replace("T", " ")
     return (
-        f"⛓️ <b>Crypto : {e(label)}</b>\n"
-        f"{sens} · <b>{e(qty_s)} {e(sym)}</b>{value}\n"
-        f"    contrepartie : {_short(other)} · {when} UTC\n"
-        f"⏱️ <b>Délai : {delay.since_timestamp(ts)}</b> entre l'opération et cette notification\n"
-        f'<a href="https://etherscan.io/tx/{e(tx)}">📎 Voir la transaction</a>'
+        f"{sens} <b>{e(qty_s)} {e(sym)}</b>{value}\n"
+        f"⛓️ {e(label)} · ⏱️ il y a <b>{delay.since_timestamp(ts)}</b>\n"
+        f'<a href="https://etherscan.io/tx/{e(tx)}">📎 Transaction</a>'
     )
