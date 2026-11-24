@@ -60,6 +60,7 @@ jobs:
           HL_WALLETS: ${{ secrets.HL_WALLETS }}
           WATCH_BTC: ${{ secrets.WATCH_BTC }}
           SEC_COMPANIES: ${{ secrets.SEC_COMPANIES }}
+          OGE_ENABLED: ${{ secrets.OGE_ENABLED }}
         run: python bot.py --loop 60 --max-minutes 330 --git-commit ${{ inputs.demo && '--demo' || '' }}
 
       - name: Sauvegarder l'état
