@@ -29,6 +29,13 @@ COMPANIES = {
     "2051380": "GrabAGun (PEW)",
     "12239": "Dominari (DOMH)",
     "1847064": "PSQ Holdings (PSQH)",
+    # Trouvées le 24/11/2026 par recherche plein texte EDGAR (noms des fils Trump
+    # ou de World Liberty Financial dans leurs déclarations) :
+    "862861": "ALT5 Sigma (ALTS, trésorerie WLFI)",
+    "2043140": "World Liberty Financial",
+    "2074878": "New America Acquisition I (NWAX)",
+    "1853825": "Thumzup (TZUP)",
+    "2091024": "Colombier Acquisition III",
 }
 for item in filter(None, (x.strip() for x in os.environ.get("SEC_COMPANIES", "").split(","))):
     cik, _, label = item.partition(":")
