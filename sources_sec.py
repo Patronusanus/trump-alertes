@@ -162,6 +162,40 @@ def build_message(person: str, f: dict, parsed: dict) -> str | None:
     return "\n".join(lines)
 
 
+def stake_message(person: str, f: dict, xml_text: str, state: dict) -> str:
+    """Schedule 13D/13G : part détenue dans une société (> 5 %), avec l'évolution."""
+    root = ET.fromstring(xml_text)
+    get = lambda name, node=root: next((el.text or "" for el in node.iter() if el.tag.endswith(name)), "")
+    issuer = get("issuerName")
+    first = next((el for el in root.iter() if el.tag.endswith("reportingPersonInfo")), root)
+    shares = float(get("aggregateAmountOwned", first) or 0)
+    pct = float(get("percentOfClass", first) or 0)
+    event = get("dateOfEvent") or get("eventDateRequiresFilingThisStatement")
+    stakes = state.setdefault("sec_stakes", {})
+    key = f"{person}|{issuer}"
+    before = stakes.get(key)
+    stakes[key] = pct
+    if before is None:
+        tag, change = "📊 PARTICIPATION", ""
+    elif pct > before:
+        tag, change = "🟢 PARTICIPATION EN HAUSSE", f" (avant {before:g} %)".replace(".", ",")
+    elif pct < before:
+        tag, change = "🔴 PARTICIPATION EN BAISSE", f" (avant {before:g} %)".replace(".", ",")
+    else:
+        tag, change = "📊 PARTICIPATION inchangée", ""
+    e = html.escape
+    m = re.match(r"(\d{2})/(\d{2})/(\d{4})$", event or "")  # format US MM/JJ/AAAA
+    iso = f"{m.group(3)}-{m.group(1)}-{m.group(2)}" if m else event
+    d = delay.days_since(delay.parse_day(iso)) if iso else None
+    ago = f" · ⏱️ il y a {delay.fmt_days(d)}" if d is not None else ""
+    pct_s = f"{pct:g}".replace(".", ",")
+    return (
+        f"{tag} <b>{e(issuer)}</b> · <b>{pct_s} %</b>{change}\n"
+        f"👤 {e(person)} · {_fmt_n(shares)} actions · événement du {_fr(iso)}{ago}\n"
+        f'<a href="{e(f["url"])}">📎 SEC {e(f["form"])}</a>'
+    )
+
+
 def check(state: dict, log=print) -> list[str]:
     """Renvoie les messages à envoyer pour les nouveaux dépôts SEC."""
     seen = set(state.get("sec_seen", []))
@@ -179,8 +213,17 @@ def check(state: dict, log=print) -> list[str]:
             seen.add(f["id"])
             if first:
                 continue
+            if f["form"].startswith(("SCHEDULE 13", "SC 13")):
+                try:
+                    msg = stake_message(person, f, _get(f["xml_url"]).text, state)
+                except Exception as ex:
+                    log("SEC 13D/13G illisible:", repr(ex))
+                    msg = f'📊 <b>Participation modifiée</b> · {html.escape(person)}\n<a href="{html.escape(f["url"])}">📎 SEC {html.escape(f["form"])}</a>'
+                log("SEC NOUVEAU :", person, f["form"], f["filed"])
+                messages.append(msg)
+                continue
             if f["form"] not in ("4", "4/A", "5", "5/A"):
-                continue  # 13D/13G/3 : participations, pas des ordres
+                continue  # formulaire 3 etc. : pas des ordres
             try:
                 parsed = parse_form4(_get(f["xml_url"]).text)
             except Exception as ex:
