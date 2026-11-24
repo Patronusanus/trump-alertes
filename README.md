@@ -2,8 +2,8 @@
 
 Ce bot t'envoie un message **Telegram** dès qu'une opération financière de
 Donald Trump, Donald Trump Jr. ou Eric Trump devient publique, le plus vite
-possible. Il tourne **gratuitement** sur GitHub Actions, toutes les 5 minutes,
-sans que ton ordinateur ait besoin d'être allumé.
+possible. Il tourne **gratuitement** sur GitHub Actions et vérifie les sources
+**toutes les 60 secondes**, sans que ton ordinateur ait besoin d'être allumé.
 
 ---
 
@@ -11,7 +11,7 @@ sans que ton ordinateur ait besoin d'être allumé.
 
 | Source | Qui | Délai | Précision |
 |---|---|---|---|
-| ⛓️ **Blockchain** (portefeuille Ethereum public de Trump) | Donald Trump | **en direct** (quelques secondes) | montant exact |
+| ⛓️ **Blockchain** (portefeuille Ethereum de Trump + trésorerie de World Liberty Financial, la société crypto de la famille) | Trump, famille | **≈ 1 minute** | montant exact, achats/ventes détectés |
 | 📣 **Truth Social** (posts qui parlent de bourse, crypto, droits de douane…) | Donald Trump | **en direct** | annonce, pas un ordre |
 | 🏛️ **SEC – formulaire 4** (actions des sociétés cotées où ils sont dirigeants ou gros actionnaires : Trump Media DJT, PSQ Holdings, GrabAGun, American Bitcoin…) | Trump, Don Jr., Eric | **≤ 2 jours ouvrés** | nombre d'actions et **prix exacts** |
 | 🇺🇸 **OGE – formulaire 278-T** (tout son portefeuille boursier : Apple, ETF, obligations…) | Donald Trump | 30 à 45 jours | fourchettes officielles |
@@ -30,9 +30,11 @@ devient publique**, avant la presse.
 - **Ses fils ne sont pas fonctionnaires** : on ne voit leurs opérations que sur
   les sociétés cotées dont ils sont administrateurs ou gros actionnaires (SEC).
   Leurs autres placements privés ne sont publiés nulle part.
-- **Le portefeuille crypto** surveillé est celui étiqueté « Donald Trump » par
-  Etherscan. Il bouge rarement ; il reçoit surtout du « spam » (jetons sans
-  valeur), que le bot ignore. Tu peux ajouter d'autres adresses (voir Options).
+- **Les portefeuilles crypto** surveillés sont celui étiqueté « Donald Trump »
+  par Etherscan et la trésorerie « World Liberty: Multisig ». Un échange
+  (un jeton envoyé, un autre reçu dans la même transaction) s'affiche comme un
+  ordre : « 🔄 ACHAT X · VENTE Y ». Les jetons sans valeur (spam) sont ignorés.
+  Tu peux ajouter d'autres adresses (voir Options).
 - **Truth Social** bloque souvent les serveurs : cette source peut ne pas
   fonctionner depuis GitHub Actions. Elle marche si tu lances le bot sur ton PC.
 - **Les PDF de l'OGE sont des scans** lus par OCR : type d'opération et montant
@@ -70,7 +72,8 @@ Une minute plus tard (3–4 min s'il y a un PDF à lire), tu reçois sur Telegra
 « ✅ Bot d'alertes activé » suivi du détail de la dernière déclaration OGE de Trump.
 Les autres sources démarrent en silence : tu ne recevras que les **nouveautés**.
 
-Ensuite, le bot vérifie tout seul toutes les 5 minutes. Pour renvoyer la
+Ensuite, le bot vérifie tout seul toutes les 60 secondes : chaque lancement
+GitHub tourne environ 5 h 30, puis le suivant prend le relais. Pour renvoyer la
 dernière déclaration à tout moment : *Run workflow* en cochant « demo ».
 
 ---
@@ -93,7 +96,7 @@ Pour qu'une option soit prise en compte, ajoute-la aussi dans
 
 Variables d'environnement reconnues par `bot.py` : `FILER_FILTER` (nom
 surveillé, défaut `Trump`), `MAX_LINES` (nombre d'opérations détaillées dans le
-message, défaut 25 ; au-delà, la liste complète arrive en fichier CSV).
+message OGE, défaut 5), `SEND_CSV=1` (joindre la liste complète en CSV).
 
 ## 💻 Lancer sur ton PC (optionnel)
 
@@ -117,7 +120,7 @@ python bot.py --loop 60                 # vérifie toutes les 60 secondes
 | `sources_crypto.py` | portefeuilles Ethereum (via l'explorateur public Blockscout) |
 | `sources_truth.py` | posts Truth Social contenant des mots-clés financiers |
 | `state.json` | déclarations déjà vues (créé et mis à jour automatiquement) |
-| `.github/workflows/bot.yml` | exécution automatique toutes les 5 minutes |
+| `.github/workflows/bot.yml` | exécution automatique en continu (vérification toutes les 60 s) |
 
 Source des données : [OGE – Officials' Individual Disclosures](https://www.oge.gov/web/oge.nsf/Officials%20Individual%20Disclosures%20Search%20Collection?OpenForm).
 Ce bot ne donne aucun conseil d'investissement.
