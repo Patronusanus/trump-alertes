@@ -330,7 +330,8 @@ WELCOME = (
 
 def run_once(demo: bool = False) -> bool:
     state = load_state()
-    first_run = "seen" not in state
+    # Premier lancement = jamais initialisé ET aucune déclaration encore vue.
+    first_run = not state.get("initialized") and not state.get("seen")
     chat_ids = resolve_chat_ids(state)
     if not chat_ids:
         log("Aucun destinataire : envoie un message à ton bot sur Telegram (voir README).")
@@ -377,6 +378,7 @@ def run_once(demo: bool = False) -> bool:
         save_state(state)  # on sauve à chaque fois : pas de doublon en cas de crash
 
     state["seen"] = list(seen | {f["id"] for f in filings})
+    state["initialized"] = True
     # Change une fois par semaine : garde le dépôt « actif » pour GitHub Actions.
     state["keepalive_week"] = datetime.now(timezone.utc).strftime("%G-W%V")
     save_state(state)
