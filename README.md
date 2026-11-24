@@ -16,6 +16,7 @@ possible. Il tourne **gratuitement** sur GitHub Actions et vérifie les sources
 | ₿ **Bitcoin** (adresses à ajouter, ex. trésorerie BTC de Trump Media repérée par Arkham) | Trump Media | **≈ 1 minute**, avant confirmation | montant exact |
 | 📣 **Truth Social** (posts qui parlent de bourse, crypto, droits de douane…) | Donald Trump | **en direct** | annonce, pas un ordre |
 | 🏛️ **SEC – formulaire 4** (actions des sociétés cotées où ils sont dirigeants ou gros actionnaires : Trump Media DJT, PSQ Holdings, GrabAGun, American Bitcoin…) | Trump, Don Jr., Eric | **≤ 2 jours ouvrés** | nombre d'actions et **prix exacts** |
+| 🏢 **SEC – sociétés liées à la famille** (Trump Media DJT, American Bitcoin ABTC, GrabAGun PEW, Dominari DOMH, PSQ Holdings PSQH) : annonces 8-K (achats d'actifs, rachats, accords), ventes annoncées par un dirigeant (formulaire 144, **avant** la vente), achats/ventes des dirigeants | les sociétés | **≈ 1 minute** après le dépôt | montants exacts |
 | 🇺🇸 **OGE – formulaire 278-T** (tout son portefeuille boursier : Apple, ETF, obligations…) | Donald Trump | 30 à 45 jours | fourchettes officielles |
 
 Chaque notification affiche le **⏱️ délai** entre l'opération et le moment où
@@ -89,6 +90,7 @@ dernière déclaration à tout moment : *Run workflow* en cochant « demo ».
 | `TELEGRAM_CHAT_ID` | Forcer le(s) destinataire(s) (ids séparés par des virgules). Sinon, toute personne qui envoie `/start` au bot est ajoutée. |
 | `WATCH_WALLETS` | Portefeuilles Ethereum en plus, ex. `0xabc…:World Liberty,0xdef…:Eric Trump` |
 | `SEC_EXTRA_CIKS` | Personnes en plus à la SEC, ex. `2031474:Jared Kushner` |
+| `SEC_COMPANIES` | Sociétés en plus, ex. `1234567:Nom` (numéro CIK SEC) ; seuil des ventes annoncées `CO_MIN_USD` (défaut 100 000 $) |
 | `HL_WALLETS` | Comptes Hyperliquid en plus, ex. `0xabc…:Nom` (seuil `HL_MIN_USD`, défaut 100 000 $) |
 | `WATCH_BTC` | Adresses Bitcoin à surveiller, ex. `bc1q…:Trump Media` (seuil `BTC_MIN`, défaut 1 BTC) |
 | `CRYPTO_MIN_USD` | Valeur minimale d'un jeton reçu pour être signalé (défaut 1000) |
@@ -122,6 +124,7 @@ python bot.py --loop 60                 # vérifie toutes les 60 secondes
 | `parse_278t.py` | lit les PDF 278-T (texte ou OCR) et en extrait les opérations |
 | `sources_sec.py` | formulaires 4 / 13D / 13G de la SEC (Trump, Don Jr., Eric) |
 | `sources_crypto.py` | portefeuilles Ethereum (via l'explorateur public Blockscout) |
+| `sources_companies.py` | déclarations SEC des sociétés liées à la famille Trump |
 | `sources_hyperliquid.py` | comptes de trading Hyperliquid |
 | `sources_btc.py` | adresses Bitcoin (via mempool.space) |
 | `sources_truth.py` | posts Truth Social contenant des mots-clés financiers |
