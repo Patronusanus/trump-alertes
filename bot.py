@@ -344,6 +344,45 @@ WELCOME = (
 )
 
 
+HEARTBEAT_HOURS = float(os.environ.get("HEARTBEAT_HOURS") or "1")
+QUIET = (0, 8)  # pas de message « bot actif » entre minuit et 8 h (heure de Paris)
+
+
+def _paris_now() -> datetime:
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("Europe/Paris"))
+    except Exception:
+        return datetime.now(timezone.utc)
+
+
+def heartbeat(state: dict, chat_ids: list[str], status: dict):
+    """Message régulier « ✅ Bot actif » pour prouver que le bot tourne."""
+    if HEARTBEAT_HOURS <= 0:
+        return
+    now = datetime.now(timezone.utc)
+    last = state.get("hb_last")
+    if last and (now - datetime.fromisoformat(last)).total_seconds() < HEARTBEAT_HOURS * 3600 - 60:
+        return
+    paris = _paris_now()
+    if QUIET[0] <= paris.hour < QUIET[1]:
+        return
+    ok = [n for n, v in status.items() if v]
+    ko = [n for n, v in status.items() if not v]
+    n = state.get("hb_alerts", 0)
+    since = "depuis le dernier point" if last else "depuis le démarrage"
+    lines = [
+        f"✅ <b>Bot actif</b> · {paris:%H:%M} · vérifie toutes les 60 s",
+        "🟢 " + ", ".join(ok) if ok else "",
+        ("⚠️ Hors service : " + ", ".join(ko)) if ko else "",
+        f"📨 {n} alerte{'s' if n > 1 else ''} {since}",
+    ]
+    send(chat_ids, "\n".join(l for l in lines if l))
+    state["hb_last"] = now.isoformat()
+    state["hb_alerts"] = 0
+
+
 def run_once(demo: bool = False, oge: bool = True) -> bool:
     state = load_state()
     # Premier lancement = jamais initialisé ET aucune déclaration encore vue.
@@ -356,14 +395,29 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
 
     # 1) Sources rapides d'abord (quelques secondes chacune).
     sent_any = False
+    status = {}
     for name, mod in FAST_SOURCES:
+        errors = []
+
+        def slog(*a, _e=errors):
+            txt = " ".join(map(str, a)).lower()
+            if any(w in txt for w in ("erreur", "inaccessible", "impossible", "illisible")):
+                _e.append(txt)
+            log(*a)
+
         try:
-            for msg in mod.check(state, log=log):
+            for msg in mod.check(state, log=slog):
                 send(chat_ids, msg)
                 sent_any = True
+                state["hb_alerts"] = state.get("hb_alerts", 0) + 1
             save_state(state)
         except Exception as ex:
             log(f"{name} : erreur {ex!r}")
+            errors.append(repr(ex))
+        if errors and name == "Truth Social":
+            continue  # bloqué depuis GitHub Actions : normal, on ne l'affiche pas
+        status[name] = not errors
+    heartbeat(state, chat_ids, status)
 
     # 2) Déclarations OGE (peut prendre quelques minutes à cause de l'OCR).
     if (not oge or not OGE_ENABLED) and state.get("initialized"):
