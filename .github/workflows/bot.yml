@@ -2,7 +2,10 @@ name: Alertes transactions Trump
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # toutes les 5 minutes (le minimum autorisé par GitHub)
+    # Chaque lancement tourne ~5 h 30 en vérifiant toutes les 60 s.
+    # GitHub ne garantit pas l'heure des « cron » (souvent 1 fois par heure) :
+    # le lancement suivant attend dans la file et prend le relais.
+    - cron: "*/20 * * * *"
   workflow_dispatch:
     inputs:
       demo:
@@ -15,12 +18,13 @@ permissions:
 
 concurrency:
   group: trump-bot
-  cancel-in-progress: false
+  # Un lancement manuel remplace le lancement en cours ; les autres attendent.
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 350
     env:
       # Tant que le token Telegram n'est pas renseigné, le bot ne fait rien.
       HAS_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
@@ -53,7 +57,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WATCH_WALLETS: ${{ secrets.WATCH_WALLETS }}
           SEC_EXTRA_CIKS: ${{ secrets.SEC_EXTRA_CIKS }}
-        run: python bot.py ${{ inputs.demo && '--demo' || '' }}
+        run: python bot.py --loop 60 --max-minutes 330 --git-commit ${{ inputs.demo && '--demo' || '' }}
 
       - name: Sauvegarder l'état
         if: always() && env.HAS_TOKEN == 'true'
