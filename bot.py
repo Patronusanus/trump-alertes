@@ -41,6 +41,7 @@ import requests
 
 import delay
 import sources_btc
+import sources_companies
 import sources_crypto
 import sources_hyperliquid
 import sources_sec
@@ -326,6 +327,7 @@ def process(filing: dict) -> tuple[str, tuple[str, bytes] | None]:
 
 FAST_SOURCES = [
     ("SEC", sources_sec),
+    ("SEC sociétés", sources_companies),
     ("Crypto", sources_crypto),
     ("Hyperliquid", sources_hyperliquid),
     ("Bitcoin", sources_btc),
