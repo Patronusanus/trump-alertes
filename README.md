@@ -17,7 +17,7 @@ possible. Il tourne **gratuitement** sur GitHub Actions et vérifie les sources
 | 📣 **Truth Social** (posts qui parlent de bourse, crypto, droits de douane…) | Donald Trump | **en direct** | annonce, pas un ordre |
 | 🏛️ **SEC – formulaire 4** (actions des sociétés cotées où ils sont dirigeants ou gros actionnaires : Trump Media DJT, PSQ Holdings, GrabAGun, American Bitcoin…) | Trump, Don Jr., Eric (+ 13D/13G : part détenue en hausse/baisse) | **≤ 2 jours ouvrés** | nombre d'actions et **prix exacts** |
 | 🏢 **SEC – sociétés liées à la famille** (Trump Media DJT, American Bitcoin ABTC, GrabAGun PEW, Dominari DOMH, PSQ Holdings PSQH, ALT5 Sigma ALTS, World Liberty Financial, Thumzup TZUP, SPAC New America I et Colombier III) : annonces 8-K (achats d'actifs, rachats, accords), ventes annoncées par un dirigeant (formulaire 144, **avant** la vente), achats/ventes des dirigeants | les sociétés | **≈ 1 minute** après le dépôt | montants exacts |
-| 🇺🇸 **OGE – formulaire 278-T** (tout son portefeuille boursier : Apple, ETF, obligations…) | Donald Trump | 30 à 45 jours | fourchettes officielles |
+| 🇺🇸 **OGE – formulaire 278-T** (tout son portefeuille boursier : Apple, ETF, obligations…) — *coupé par défaut (30–45 jours de retard) ; secret `OGE_ENABLED=1` pour le réactiver* | Donald Trump | 30 à 45 jours | fourchettes officielles |
 
 Chaque notification affiche le **⏱️ délai** entre l'opération et le moment où
 tu la reçois : à la seconde près pour la blockchain et Truth Social, au jour près
