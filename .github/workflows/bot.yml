@@ -61,6 +61,7 @@ jobs:
           WATCH_BTC: ${{ secrets.WATCH_BTC }}
           SEC_COMPANIES: ${{ secrets.SEC_COMPANIES }}
           OGE_ENABLED: ${{ secrets.OGE_ENABLED }}
+          HEARTBEAT_HOURS: ${{ secrets.HEARTBEAT_HOURS }}
         run: python bot.py --loop 60 --max-minutes 330 --git-commit ${{ inputs.demo && '--demo' || '' }}
 
       - name: Sauvegarder l'état
