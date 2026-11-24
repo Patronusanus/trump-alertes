@@ -139,34 +139,26 @@ def _fr(d: str) -> str:
     return f"{m.group(3)}/{m.group(2)}/{m.group(1)}" if m else d
 
 
-def build_message(person: str, f: dict, parsed: dict | None) -> str:
+def build_message(person: str, f: dict, parsed: dict) -> str | None:
+    """Une ligne par achat/vente en bourse ; rien pour le reste (attributions, dons...)."""
     e = html.escape
-    label = FORM_LABELS.get(f["form"], f"Formulaire {f['form']}")
-    lines = [f"🏛️ <b>SEC : {e(person)}</b>", f"📄 {e(label)} · déposé le {_fr(f['filed'])}"]
-    if parsed:
-        tick = f" ({e(parsed['ticker'])})" if parsed["ticker"] else ""
-        lines.append(f"🏢 <b>{e(parsed['issuer'])}{tick}</b>")
-        if parsed["txs"]:
-            lines.append(delay.line_for_days([delay.days_since(delay.parse_day(t["date"])) for t in parsed["txs"]]))
-        if parsed["roles"]:
-            lines.append(f"👤 {e(', '.join(parsed['roles']))}")
-        for t in parsed["txs"]:
-            title, _ = CODES.get(t["code"], (f"Code {t['code']}", "autre"))
-            sens = "+" if t["ad"] == "A" else "−" if t["ad"] == "D" else ""
-            line = f"{title} · {sens}{_fmt_n(t['shares'])} {e(t['security'][:60])}"
-            if t["price"]:
-                total = t["shares"] * t["price"]
-                line += f"\n    à {t['price']:.2f} $ → <b>{_fmt_n(total)} $</b>"
-            line += f" · {_fr(t['date'])}"
-            d = delay.days_since(delay.parse_day(t["date"]))
-            if d is not None:
-                line += f" (il y a {delay.fmt_days(d)})"
-            if t["after"]:
-                line += f"\n    détenu après : {_fmt_n(float(t['after']))}"
-            lines.append(line)
-        if not parsed["txs"]:
-            lines.append("Aucune opération listée (déclaration de détention).")
-    lines.append(f'<a href="{e(f["url"])}">📎 Document SEC</a>')
+    lines = []
+    for t in parsed["txs"]:
+        if t["code"] not in ("P", "S"):
+            continue
+        tag = "🟢 ACHAT" if t["code"] == "P" else "🔴 VENTE"
+        ticker = parsed["ticker"] or parsed["issuer"]
+        total = f" · <b>{_fmt_n(t['shares'] * t['price'])} $</b>" if t["price"] else ""
+        price = f" à {t['price']:.2f} $".replace(".", ",") if t["price"] else ""
+        d = delay.days_since(delay.parse_day(t["date"]))
+        ago = f" · ⏱️ il y a {delay.fmt_days(d)}" if d is not None else ""
+        lines.append(
+            f"{tag} <b>{e(ticker)}</b>{total}\n"
+            f"👤 {e(person)} · {_fmt_n(t['shares'])} actions{price}{ago}"
+        )
+    if not lines:
+        return None
+    lines.append(f'<a href="{e(f["url"])}">📎 SEC</a>')
     return "\n".join(lines)
 
 
@@ -187,13 +179,16 @@ def check(state: dict, log=print) -> list[str]:
             seen.add(f["id"])
             if first:
                 continue
-            parsed = None
-            if f["form"] in ("3", "4", "4/A", "5", "5/A"):
-                try:
-                    parsed = parse_form4(_get(f["xml_url"]).text)
-                except Exception as ex:
-                    log("SEC lecture XML impossible:", repr(ex))
+            if f["form"] not in ("4", "4/A", "5", "5/A"):
+                continue  # 13D/13G/3 : participations, pas des ordres
+            try:
+                parsed = parse_form4(_get(f["xml_url"]).text)
+            except Exception as ex:
+                log("SEC lecture XML impossible:", repr(ex))
+                continue
             log("SEC NOUVEAU :", person, f["form"], f["filed"])
-            messages.append(build_message(person, f, parsed))
+            msg = build_message(person, f, parsed)
+            if msg:
+                messages.append(msg)
     state["sec_seen"] = sorted(seen)
     return messages
