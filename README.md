@@ -7,11 +7,13 @@ possible. Il tourne **gratuitement** sur GitHub Actions et vérifie les sources
 
 ---
 
-## ⚡ Les 4 sources surveillées, de la plus rapide à la plus lente
+## ⚡ Les sources surveillées, de la plus rapide à la plus lente
 
 | Source | Qui | Délai | Précision |
 |---|---|---|---|
 | ⛓️ **Blockchain** (portefeuille Ethereum de Trump + trésorerie de World Liberty Financial, la société crypto de la famille) | Trump, famille | **≈ 1 minute** | montant exact, achats/ventes détectés |
+| 📈 **Hyperliquid** (compte de la « baleine Trump insider » de la presse ; lien avec Trump **non prouvé**, compte inactif depuis sa liquidation du 31/01/2026) | trader anonyme | **≈ 1 minute** | taille et prix exacts |
+| ₿ **Bitcoin** (adresses à ajouter, ex. trésorerie BTC de Trump Media repérée par Arkham) | Trump Media | **≈ 1 minute**, avant confirmation | montant exact |
 | 📣 **Truth Social** (posts qui parlent de bourse, crypto, droits de douane…) | Donald Trump | **en direct** | annonce, pas un ordre |
 | 🏛️ **SEC – formulaire 4** (actions des sociétés cotées où ils sont dirigeants ou gros actionnaires : Trump Media DJT, PSQ Holdings, GrabAGun, American Bitcoin…) | Trump, Don Jr., Eric | **≤ 2 jours ouvrés** | nombre d'actions et **prix exacts** |
 | 🇺🇸 **OGE – formulaire 278-T** (tout son portefeuille boursier : Apple, ETF, obligations…) | Donald Trump | 30 à 45 jours | fourchettes officielles |
@@ -87,6 +89,8 @@ dernière déclaration à tout moment : *Run workflow* en cochant « demo ».
 | `TELEGRAM_CHAT_ID` | Forcer le(s) destinataire(s) (ids séparés par des virgules). Sinon, toute personne qui envoie `/start` au bot est ajoutée. |
 | `WATCH_WALLETS` | Portefeuilles Ethereum en plus, ex. `0xabc…:World Liberty,0xdef…:Eric Trump` |
 | `SEC_EXTRA_CIKS` | Personnes en plus à la SEC, ex. `2031474:Jared Kushner` |
+| `HL_WALLETS` | Comptes Hyperliquid en plus, ex. `0xabc…:Nom` (seuil `HL_MIN_USD`, défaut 100 000 $) |
+| `WATCH_BTC` | Adresses Bitcoin à surveiller, ex. `bc1q…:Trump Media` (seuil `BTC_MIN`, défaut 1 BTC) |
 | `CRYPTO_MIN_USD` | Valeur minimale d'un jeton reçu pour être signalé (défaut 1000) |
 | `TRUTH_ENABLED` | Mettre `0` pour couper Truth Social |
 | `TRUTH_KEYWORDS` | Mots-clés Truth Social, séparés par des virgules |
@@ -118,6 +122,8 @@ python bot.py --loop 60                 # vérifie toutes les 60 secondes
 | `parse_278t.py` | lit les PDF 278-T (texte ou OCR) et en extrait les opérations |
 | `sources_sec.py` | formulaires 4 / 13D / 13G de la SEC (Trump, Don Jr., Eric) |
 | `sources_crypto.py` | portefeuilles Ethereum (via l'explorateur public Blockscout) |
+| `sources_hyperliquid.py` | comptes de trading Hyperliquid |
+| `sources_btc.py` | adresses Bitcoin (via mempool.space) |
 | `sources_truth.py` | posts Truth Social contenant des mots-clés financiers |
 | `state.json` | déclarations déjà vues (créé et mis à jour automatiquement) |
 | `.github/workflows/bot.yml` | exécution automatique en continu (vérification toutes les 60 s) |
