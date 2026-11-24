@@ -51,7 +51,8 @@ STATE_FILE = Path(os.environ.get("STATE_FILE", Path(__file__).with_name("state.j
 FILER_FILTER = os.environ.get("FILER_FILTER", "Trump")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-MAX_LINES = int(os.environ.get("MAX_LINES", "25"))
+MAX_LINES = int(os.environ.get("MAX_LINES", "5"))
+SEND_CSV = os.environ.get("SEND_CSV", "0") == "1"
 HEADERS = {"User-Agent": "Mozilla/5.0 (disclosure-alert-bot)"}
 COLUMNS = ["docDate", "title", "type", "name", "agency", "level"]
 
@@ -222,51 +223,57 @@ def totals(txs: list[Transaction]) -> tuple[int, int, bool]:
     return lo, hi, open_ended
 
 
+def short_range(t: Transaction) -> str:
+    """Fourchette compacte : « 1–5 M$ », « 250–500 k$ », « > 50 M$ »."""
+    if t.amount_min is None:
+        return "montant ?"
+
+    def f(v: int) -> str:
+        if v >= 1_000_000:
+            return f"{v / 1_000_000:g}".replace(".", ",")
+        return f"{v / 1_000:g}".replace(".", ",")
+
+    lo = round(t.amount_min, -3) if t.amount_min > 1000 else 1000
+    if t.amount_max is None:
+        return f"> {fmt_short(t.amount_min - 1)}"
+    unit = "M$" if t.amount_max >= 1_000_000 and lo >= 1_000_000 else "k$"
+    if unit == "k$" and t.amount_max >= 1_000_000:
+        return f"{f(lo)} k$–{f(t.amount_max)} M$"
+    return f"{f(lo)}–{f(t.amount_max)} {unit}"
+
+
 def build_message(filing: dict, txs: list[Transaction] | None, error: str | None = None) -> str:
+    """Message court : les plus gros ordres, une ligne chacun."""
     e = html.escape
-    who = e(filing["name"])
-    lines = [
-        f"🇺🇸 <b>Nouvelle déclaration : {who}</b>",
-        f"📄 {e(filing['type'])} · publiée par l'OGE le {fr_date(filing['date'])}",
-    ]
-    if txs is None:
-        if error:
-            lines.append(f"⚠️ Lecture automatique impossible ({e(error)}).")
-        lines.append(f'<a href="{e(filing["url"])}">Ouvrir le document officiel</a>')
-        return "\n".join(lines)
+    link = f'<a href="{e(filing["url"])}">📎 PDF officiel</a>'
+    head = "🇺🇸 <b>TRUMP · déclaration officielle (OGE)</b>"
     if not txs:
-        lines.append("Aucune opération lisible automatiquement, voir le document.")
-        lines.append(f'<a href="{e(filing["url"])}">Ouvrir le document officiel</a>')
-        return "\n".join(lines)
+        why = f" ({e(error)})" if error else ""
+        return f"{head}\n⚠️ Lecture automatique impossible{why}.\n{link}"
 
     buys = [t for t in txs if t.kind == "achat"]
     sells = [t for t in txs if t.kind in ("vente", "vente partielle")]
-    other = [t for t in txs if t not in buys and t not in sells]
-    lines.append(f"🧾 <b>{len(txs)} opérations</b>")
-    lines.append(delay.line_for_days([delay.days_since(delay.parse_day(t.date)) for t in txs]))
-    for label, group in (("🟢 Achats", buys), ("🔴 Ventes", sells), ("🔁 Autres", other)):
-        if not group:
-            continue
-        lo, hi, open_ended = totals(group)
-        plus = "+" if open_ended else ""
-        lines.append(f"{label} : {len(group)} · entre {fmt_short(lo)} et {fmt_short(hi)}{plus}")
+    days = [delay.days_since(delay.parse_day(t.date)) for t in txs]
+    days = [d for d in days if d is not None]
+    lines = [head]
+    if days:
+        lo, hi = min(days), max(days)
+        span = f"{lo} jours" if lo == hi else f"{lo} à {hi} jours"
+        lines.append(f"⏱️ Ordres passés il y a <b>{span}</b>")
+    lines.append(f"🟢 {len(buys)} achats · 🔴 {len(sells)} ventes")
     lines.append("")
-    # Les plus grosses opérations en premier ; la liste complète part en fichier CSV.
     ranked = sorted(txs, key=lambda t: -(t.amount_max or (t.amount_min or 0) * 2))
     if len(ranked) > MAX_LINES:
-        lines.append(f"<b>Les {MAX_LINES} plus grosses opérations :</b>")
+        lines.append(f"<b>Top {MAX_LINES} :</b>")
     for t in ranked[:MAX_LINES]:
-        date = t.date or "date ?"
-        tag = KIND_ICON.get(t.kind, "❔ ?")
-        late = " ⏰" if t.late else ""
+        tag = "🟢 ACHAT" if t.kind == "achat" else "🔴 VENTE" if t.kind.startswith("vente") else "🔁"
         d = delay.days_since(delay.parse_day(t.date))
-        ago = f" · il y a {delay.fmt_days(d)}" if d is not None else ""
-        lines.append(f"{tag} · <b>{e(t.description or 'actif illisible')}</b>\n    {e(t.amount_label)} · {date}{ago}{late}")
+        ago = f" · il y a {d} j" if d is not None else ""
+        name = e((t.description or "actif illisible")[:40])
+        lines.append(f"{tag} <b>{name}</b> · {short_range(t)}{ago}")
     if len(ranked) > MAX_LINES:
-        lines.append(f"… et {len(ranked) - MAX_LINES} autres (liste complète dans le fichier ci-dessous).")
-    lines.append("")
-    lines.append(f'<a href="{e(filing["url"])}">📎 Document officiel (PDF)</a>')
-    lines.append("<i>Montants = fourchettes officielles. Lecture par OCR : vérifier sur le PDF en cas de doute.</i>")
+        lines.append(f"<i>+ {len(ranked) - MAX_LINES} autres ordres plus petits</i>")
+    lines.append(link)
     return "\n".join(lines)
 
 
@@ -307,7 +314,7 @@ def process(filing: dict) -> tuple[str, tuple[str, bytes] | None]:
         txs = parse_pdf(pdf)
         log(f"{len(txs)} opérations trouvées")
         csv_file = None
-        if len(txs) > MAX_LINES:
+        if SEND_CSV and len(txs) > MAX_LINES:
             csv_file = (f"trump-{filing['date'][:10]}.csv", to_csv(txs))
         return build_message(filing, txs), csv_file
     except Exception as ex:
@@ -318,13 +325,10 @@ def process(filing: dict) -> tuple[str, tuple[str, bytes] | None]:
 FAST_SOURCES = [("SEC", sources_sec), ("Crypto", sources_crypto), ("Truth Social", sources_truth)]
 
 WELCOME = (
-    "✅ <b>Bot d'alertes activé.</b>\n"
-    "Je surveille toutes les 5 minutes :\n"
-    "🏛️ la SEC : achats/ventes d'actions de Trump, Don Jr. et Eric (sous 2 jours ouvrés, montants exacts)\n"
-    "⛓️ le portefeuille crypto public de Trump (en direct)\n"
-    "📣 ses posts Truth Social qui parlent de marchés\n"
-    "🇺🇸 ses déclarations officielles de transactions à l'OGE (30 à 45 jours de délai, fourchettes)\n\n"
-    "Voici sa déclaration OGE la plus récente, pour exemple :"
+    "✅ <b>Bot activé.</b> Un message court par ordre :\n"
+    "🟢 ACHAT / 🔴 VENTE · action · montant · ⏱️ délai depuis l'ordre.\n"
+    "Sources : crypto (secondes), SEC (≤ 2 jours), OGE (30–45 jours).\n"
+    "Exemple avec la dernière déclaration OGE :"
 )
 
 
@@ -372,7 +376,8 @@ def run_once(demo: bool = False) -> bool:
 
     for filing in reversed(new):  # du plus ancien au plus récent
         log("NOUVEAU :", filing["name"], filing["type"], filing["date"])
-        send(chat_ids, *process(filing))
+        if "transaction" in filing["type"].lower():  # rapports annuels etc. : ignorés
+            send(chat_ids, *process(filing))
         seen.add(filing["id"])
         state["seen"] = list(seen)
         save_state(state)  # on sauve à chaque fois : pas de doublon en cas de crash
