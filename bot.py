@@ -40,7 +40,9 @@ from urllib.parse import urljoin
 import requests
 
 import delay
+import sources_btc
 import sources_crypto
+import sources_hyperliquid
 import sources_sec
 import sources_truth
 from parse_278t import Transaction, fmt_usd, parse_pdf
@@ -322,7 +324,13 @@ def process(filing: dict) -> tuple[str, tuple[str, bytes] | None]:
         return build_message(filing, None, error=type(ex).__name__), None
 
 
-FAST_SOURCES = [("SEC", sources_sec), ("Crypto", sources_crypto), ("Truth Social", sources_truth)]
+FAST_SOURCES = [
+    ("SEC", sources_sec),
+    ("Crypto", sources_crypto),
+    ("Hyperliquid", sources_hyperliquid),
+    ("Bitcoin", sources_btc),
+    ("Truth Social", sources_truth),
+]
 
 WELCOME = (
     "✅ <b>Bot activé.</b> Un message court par ordre :\n"
