@@ -15,8 +15,8 @@ possible. Il tourne **gratuitement** sur GitHub Actions et vérifie les sources
 | 📈 **Hyperliquid** (compte de la « baleine Trump insider » de la presse ; lien avec Trump **non prouvé**, compte inactif depuis sa liquidation du 31/01/2026) | trader anonyme | **≈ 1 minute** | taille et prix exacts |
 | ₿ **Bitcoin** (adresses à ajouter, ex. trésorerie BTC de Trump Media repérée par Arkham) | Trump Media | **≈ 1 minute**, avant confirmation | montant exact |
 | 📣 **Truth Social** (posts qui parlent de bourse, crypto, droits de douane…) | Donald Trump | **en direct** | annonce, pas un ordre |
-| 🏛️ **SEC – formulaire 4** (actions des sociétés cotées où ils sont dirigeants ou gros actionnaires : Trump Media DJT, PSQ Holdings, GrabAGun, American Bitcoin…) | Trump, Don Jr., Eric | **≤ 2 jours ouvrés** | nombre d'actions et **prix exacts** |
-| 🏢 **SEC – sociétés liées à la famille** (Trump Media DJT, American Bitcoin ABTC, GrabAGun PEW, Dominari DOMH, PSQ Holdings PSQH) : annonces 8-K (achats d'actifs, rachats, accords), ventes annoncées par un dirigeant (formulaire 144, **avant** la vente), achats/ventes des dirigeants | les sociétés | **≈ 1 minute** après le dépôt | montants exacts |
+| 🏛️ **SEC – formulaire 4** (actions des sociétés cotées où ils sont dirigeants ou gros actionnaires : Trump Media DJT, PSQ Holdings, GrabAGun, American Bitcoin…) | Trump, Don Jr., Eric (+ 13D/13G : part détenue en hausse/baisse) | **≤ 2 jours ouvrés** | nombre d'actions et **prix exacts** |
+| 🏢 **SEC – sociétés liées à la famille** (Trump Media DJT, American Bitcoin ABTC, GrabAGun PEW, Dominari DOMH, PSQ Holdings PSQH, ALT5 Sigma ALTS, World Liberty Financial, Thumzup TZUP, SPAC New America I et Colombier III) : annonces 8-K (achats d'actifs, rachats, accords), ventes annoncées par un dirigeant (formulaire 144, **avant** la vente), achats/ventes des dirigeants | les sociétés | **≈ 1 minute** après le dépôt | montants exacts |
 | 🇺🇸 **OGE – formulaire 278-T** (tout son portefeuille boursier : Apple, ETF, obligations…) | Donald Trump | 30 à 45 jours | fourchettes officielles |
 
 Chaque notification affiche le **⏱️ délai** entre l'opération et le moment où
