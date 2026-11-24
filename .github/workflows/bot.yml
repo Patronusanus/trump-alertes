@@ -1,0 +1,67 @@
+name: Alertes transactions Trump
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # toutes les 5 minutes (le minimum autorisé par GitHub)
+  workflow_dispatch:
+    inputs:
+      demo:
+        description: "Renvoyer la dernière déclaration (test)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trump-bot
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Tant que le token Telegram n'est pas renseigné, le bot ne fait rien.
+      HAS_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+    steps:
+      - name: Token Telegram manquant
+        if: env.HAS_TOKEN != 'true'
+        run: echo "Ajoute le secret TELEGRAM_BOT_TOKEN (voir README) pour activer le bot."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+
+      - uses: actions/setup-python@v5
+        if: env.HAS_TOKEN == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Outils OCR
+        if: env.HAS_TOKEN == 'true'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr poppler-utils >/dev/null
+
+      - name: Dépendances Python
+        if: env.HAS_TOKEN == 'true'
+        run: pip install -q -r requirements.txt
+
+      - name: Vérifier les nouvelles déclarations
+        if: env.HAS_TOKEN == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WATCH_WALLETS: ${{ secrets.WATCH_WALLETS }}
+          SEC_EXTRA_CIKS: ${{ secrets.SEC_EXTRA_CIKS }}
+        run: python bot.py ${{ inputs.demo && '--demo' || '' }}
+
+      - name: Sauvegarder l'état
+        if: always() && env.HAS_TOKEN == 'true'
+        run: |
+          if [ -f state.json ] && [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name "trump-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -q -m "Mise à jour de l'état du bot"
+            git pull -q --rebase && git push -q
+          fi
