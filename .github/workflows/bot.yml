@@ -57,6 +57,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WATCH_WALLETS: ${{ secrets.WATCH_WALLETS }}
           SEC_EXTRA_CIKS: ${{ secrets.SEC_EXTRA_CIKS }}
+          HL_WALLETS: ${{ secrets.HL_WALLETS }}
+          WATCH_BTC: ${{ secrets.WATCH_BTC }}
         run: python bot.py --loop 60 --max-minutes 330 --git-commit ${{ inputs.demo && '--demo' || '' }}
 
       - name: Sauvegarder l'état
