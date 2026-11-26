@@ -39,6 +39,18 @@ SYSTEM = (
     "seulement les mouvements les plus probables. Réponds en français, phrases très courtes."
 )
 
+SYSTEM_OP = (
+    "Tu es analyste de marchés financiers. On te donne une opération financière qui vient d'être "
+    "rendue publique : achat ou vente d'actions, de crypto ou de produits par Donald Trump, ses fils, "
+    "leurs sociétés ou des portefeuilles qui leur sont liés, ou une annonce d'une de ces sociétés "
+    "(déclarations SEC, blockchain...). Explique en une phrase ce que cette opération signifie "
+    "probablement (signal de confiance, prise de bénéfices, besoin de liquidités, opération de "
+    "routine...), puis estime de façon factuelle et prudente son impact probable sur les marchés à "
+    "court terme : quels actifs pourraient bouger, dans quel sens, avec quelle probabilité. Beaucoup "
+    "d'opérations n'ont aucun effet : dis-le (impact « nul »). N'invente pas de chiffres. Ne donne "
+    "aucune recommandation d'achat ou de vente. Réponds en français, phrases très courtes."
+)
+
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -78,7 +90,9 @@ def enabled() -> bool:
     return bool(_gemini_key() or os.environ.get("ANTHROPIC_API_KEY", "").strip())
 
 
-def _prompt(text: str, markets_hint: list[str]) -> str:
+def _prompt(text: str, markets_hint: list[str], kind: str = "post") -> str:
+    if kind == "operation":
+        return f"Opération signalée :\n<operation>\n{text}\n</operation>"
     return (
         f"Post de Trump :\n<post>\n{text}\n</post>\n"
         f"Marchés repérés par mots-clés (indicatif) : {', '.join(markets_hint) or 'aucun'}"
@@ -95,11 +109,11 @@ def _parse_json(out: str) -> dict | None:
     return data if isinstance(data, dict) and "impact" in data else None
 
 
-def _gemini(text: str, markets_hint: list[str]) -> dict | None:
+def _gemini(text: str, markets_hint: list[str], kind: str = "post") -> dict | None:
     """Gemini (gratuit). Passe au modèle suivant si quota atteint ou modèle absent."""
     body = {
-        "systemInstruction": {"parts": [{"text": SYSTEM}]},
-        "contents": [{"role": "user", "parts": [{"text": _prompt(text, markets_hint)}]}],
+        "systemInstruction": {"parts": [{"text": SYSTEM_OP if kind == "operation" else SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": _prompt(text, markets_hint, kind)}]}],
     }
     configs = [
         {"responseMimeType": "application/json", "responseJsonSchema": SCHEMA},
@@ -112,7 +126,7 @@ def _gemini(text: str, markets_hint: list[str]) -> dict | None:
         for i, cfg in enumerate(configs):
             payload = dict(body, generationConfig=cfg)
             if i:
-                payload["contents"] = [{"role": "user", "parts": [{"text": _prompt(text, markets_hint) + hint}]}]
+                payload["contents"] = [{"role": "user", "parts": [{"text": _prompt(text, markets_hint, kind) + hint}]}]
             for attempt in range(3):  # 503 = modèle surchargé, souvent quelques secondes
                 r = requests.post(
                     GEMINI_URL.format(model),
@@ -136,13 +150,13 @@ def _gemini(text: str, markets_hint: list[str]) -> dict | None:
     raise RuntimeError(last or "Gemini indisponible")
 
 
-def analyse(text: str, markets_hint: list[str]) -> dict | None:
+def analyse(text: str, markets_hint: list[str], kind: str = "post") -> dict | None:
     """Renvoie l'analyse (dict) ou None si indisponible / refusée."""
     global _client
     if not enabled():
         return None
     if _gemini_key():
-        return _gemini(text, markets_hint)
+        return _gemini(text, markets_hint, kind)
     import anthropic
 
     if _client is None:
@@ -153,10 +167,10 @@ def analyse(text: str, markets_hint: list[str]) -> dict | None:
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
-        system=SYSTEM,
+        system=SYSTEM_OP if kind == "operation" else SYSTEM,
         messages=[{
             "role": "user",
-            "content": _prompt(text, markets_hint),
+            "content": _prompt(text, markets_hint, kind),
         }],
     )
     if response.stop_reason in ("refusal", "max_tokens"):
