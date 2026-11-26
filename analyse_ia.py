@@ -1,8 +1,12 @@
 """Analyse IA d'un post de Trump : impact probable sur les marchés.
 
-Activée seulement si le secret ANTHROPIC_API_KEY est renseigné (clé payante,
-créée par toi sur https://console.anthropic.com). Sans clé, le bot garde la
-simple liste « Marchés concernés » par mots-clés.
+Deux moteurs possibles (le premier dont la clé existe est utilisé) :
+  - GEMINI_API_KEY : Google Gemini, GRATUIT (clé sur https://aistudio.google.com,
+    sans carte bancaire). Modèles essayés dans l'ordre : Gemini Flash (le
+    meilleur, ~20 analyses/jour gratuites), puis Flash-Lite (~500/jour) quand
+    le quota est atteint.
+  - ANTHROPIC_API_KEY : Claude (payant).
+Sans clé, le bot garde la simple liste « Marchés concernés » par mots-clés.
 
 C'est une ESTIMATION générale (comme un commentaire de marché), jamais un
 conseil d'achat ou de vente.
@@ -12,8 +16,17 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
+
+import requests
 
 MODEL = os.environ.get("ANALYSE_MODEL") or "claude-opus-5-5"
+GEMINI_MODELS = [
+    m.strip()
+    for m in (os.environ.get("GEMINI_MODELS") or "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite").split(",")
+    if m.strip()
+]
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent"
 
 SYSTEM = (
     "Tu es analyste de marchés financiers. On te donne un post Truth Social de Donald Trump. "
@@ -56,8 +69,66 @@ SENS = {"hausse": "📈", "baisse": "📉", "volatilité": "↕️"}
 _client = None
 
 
+def _gemini_key() -> str:
+    return os.environ.get("GEMINI_API_KEY", "").strip()
+
+
 def enabled() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    return bool(_gemini_key() or os.environ.get("ANTHROPIC_API_KEY", "").strip())
+
+
+def _prompt(text: str, markets_hint: list[str]) -> str:
+    return (
+        f"Post de Trump :\n<post>\n{text}\n</post>\n"
+        f"Marchés repérés par mots-clés (indicatif) : {', '.join(markets_hint) or 'aucun'}"
+    )
+
+
+def _parse_json(out: str) -> dict | None:
+    out = re.sub(r"^```(?:json)?\s*|\s*```$", "", out.strip())
+    try:
+        data = json.loads(out)
+    except ValueError:
+        m = re.search(r"\{.*\}", out, re.S)
+        data = json.loads(m.group(0)) if m else None
+    return data if isinstance(data, dict) and "impact" in data else None
+
+
+def _gemini(text: str, markets_hint: list[str]) -> dict | None:
+    """Gemini (gratuit). Passe au modèle suivant si quota atteint ou modèle absent."""
+    body = {
+        "systemInstruction": {"parts": [{"text": SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": _prompt(text, markets_hint)}]}],
+    }
+    configs = [
+        {"responseMimeType": "application/json", "responseJsonSchema": SCHEMA},
+        # si le schéma est refusé : JSON simple, format décrit dans la consigne
+        {"responseMimeType": "application/json"},
+    ]
+    hint = "\nRéponds uniquement en JSON conforme à ce schéma : " + json.dumps(SCHEMA, ensure_ascii=False)
+    last = None
+    for model in GEMINI_MODELS:
+        for i, cfg in enumerate(configs):
+            payload = dict(body, generationConfig=cfg)
+            if i:
+                payload["contents"] = [{"role": "user", "parts": [{"text": _prompt(text, markets_hint) + hint}]}]
+            r = requests.post(
+                GEMINI_URL.format(model),
+                headers={"x-goog-api-key": _gemini_key(), "Content-Type": "application/json"},
+                json=payload,
+                timeout=90,
+            )
+            last = f"{model} HTTP {r.status_code}"
+            if r.status_code == 400 and i == 0:
+                continue  # schéma refusé : on réessaie sans
+            if r.status_code in (403, 404, 429, 500, 503) or not r.ok:
+                break  # quota / modèle indisponible : modèle suivant
+            parts = ((r.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+            data = _parse_json("".join(p.get("text", "") for p in parts if not p.get("thought")))
+            if data:
+                return data
+            break
+    raise RuntimeError(last or "Gemini indisponible")
 
 
 def analyse(text: str, markets_hint: list[str]) -> dict | None:
@@ -65,6 +136,8 @@ def analyse(text: str, markets_hint: list[str]) -> dict | None:
     global _client
     if not enabled():
         return None
+    if _gemini_key():
+        return _gemini(text, markets_hint)
     import anthropic
 
     if _client is None:
@@ -78,8 +151,7 @@ def analyse(text: str, markets_hint: list[str]) -> dict | None:
         system=SYSTEM,
         messages=[{
             "role": "user",
-            "content": f"Post de Trump :\n<post>\n{text}\n</post>\n"
-            f"Marchés repérés par mots-clés (indicatif) : {', '.join(markets_hint) or 'aucun'}",
+            "content": _prompt(text, markets_hint),
         }],
     )
     if response.stop_reason in ("refusal", "max_tokens"):
