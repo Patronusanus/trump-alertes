@@ -3,7 +3,9 @@
 Trump annonce parfois sur Truth Social des choses qui font bouger les cours
 (« THIS IS A GREAT TIME TO BUY!!! », droits de douane, crypto...). Le bot relaie
 les posts qui parlent d'un marché et indique les MARCHÉS CONCERNÉS (sans dire
-d'acheter ou de vendre : ce n'est pas un conseil d'investissement).
+d'acheter ou de vendre : ce n'est pas un conseil d'investissement). Avec le secret
+ANTHROPIC_API_KEY, chaque post retenu est en plus analysé par une IA (analyse_ia.py) :
+impact estimé et mouvements de marché les plus probables.
 
 Accès : l'API de Truth Social bloque les serveurs (dont GitHub Actions). Le bot
 passe alors par l'archive publique trumpstruth.org (flux RSS), qui recopie
@@ -20,6 +22,7 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
+import analyse_ia
 import delay
 
 ACCOUNT_ID = "107780257626128497"  # @realDonaldTrump
@@ -132,11 +135,22 @@ def check(state: dict, log=print) -> list[str]:
         if not hits:
             continue
         excerpt = p["text"] if len(p["text"]) < 280 else p["text"][:280] + "…"
+        analysis = None
+        try:
+            analysis = analyse_ia.analyse(p["text"], hits)
+        except Exception as ex:
+            log(f"Analyse IA impossible ({type(ex).__name__}) : liste par mots-clés à la place")
+        if analysis:
+            body = analyse_ia.format_block(analysis)
+            note = "⚠️ <i>Estimation automatique par IA, pas un conseil d'investissement.</i>"
+        else:
+            body = f"🎯 Marchés concernés : <b>{html.escape(' · '.join(hits[:4]))}</b>"
+            note = "<i>Info, pas un conseil d'achat.</i>"
         msgs.append(
             f"📣 <b>Trump sur Truth Social</b> · ⏱️ il y a <b>{delay.since_timestamp(p['at'])}</b>\n"
             f"« {html.escape(excerpt)} »\n"
-            f"🎯 Marchés concernés : <b>{html.escape(' · '.join(hits[:4]))}</b>\n"
-            f"<i>Info, pas un conseil d'achat.</i> "
+            f"{body}\n"
+            f"{note} "
             f'<a href="{html.escape(p["url"])}">📎 Post</a>'
         )
     state["truth_last_id"] = str(last)
