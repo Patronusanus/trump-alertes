@@ -4,3 +4,4 @@ pdf2image>=1.17
 pytesseract>=0.3.10
 numpy>=1.26
 Pillow>=10.0
+anthropic>=2.14
