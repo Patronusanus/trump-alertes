@@ -1,0 +1,34 @@
+name: Surveillance du bot
+
+on:
+  schedule:
+    # Vérifie que le bot donne signe de vie. GitHub ne garantit pas l'heure
+    # exacte des « cron » : en pratique toutes les 10 à 60 minutes.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # enregistre watchdog.json
+  actions: write   # relance le bot
+
+concurrency:
+  group: trump-bot-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HAS_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+
+      - name: Vérifier que le bot est actif
+        if: env.HAS_TOKEN == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          DOWN_AFTER_MINUTES: ${{ secrets.DOWN_AFTER_MINUTES }}
+        run: python3 watchdog.py
