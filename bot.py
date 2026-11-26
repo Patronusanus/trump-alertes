@@ -344,8 +344,8 @@ WELCOME = (
 )
 
 
-HEARTBEAT_HOURS = float(os.environ.get("HEARTBEAT_HOURS") or "1")
-QUIET = (0, 8)  # pas de message « bot actif » entre minuit et 8 h (heure de Paris)
+ALIVE_EVERY = 600  # « signe de vie » enregistré dans state.json toutes les 10 min (lu par watchdog.py)
+WATCHDOG_FILE = STATE_FILE.with_name("watchdog.json")
 
 
 def _paris_now() -> datetime:
@@ -357,30 +357,50 @@ def _paris_now() -> datetime:
         return datetime.now(timezone.utc)
 
 
-def heartbeat(state: dict, chat_ids: list[str], status: dict):
-    """Message régulier « ✅ Bot actif » pour prouver que le bot tourne."""
-    if HEARTBEAT_HOURS <= 0:
-        return
+def update_status(state: dict, chat_ids: list[str], status: dict, move: bool = False):
+    """Un seul message « 🟢 BOT ACTIF », modifié en silence à chaque passage.
+
+    Après une alerte (move=True), il est supprimé puis renvoyé sans son ni
+    notification pour rester tout en bas de la conversation.
+    """
     now = datetime.now(timezone.utc)
-    last = state.get("hb_last")
-    if last and (now - datetime.fromisoformat(last)).total_seconds() < HEARTBEAT_HOURS * 3600 - 60:
-        return
-    paris = _paris_now()
-    if QUIET[0] <= paris.hour < QUIET[1]:
-        return
-    ok = [n for n, v in status.items() if v]
+    last = state.get("alive_at")
+    if not last or (now - datetime.fromisoformat(last)).total_seconds() >= ALIVE_EVERY:
+        state["alive_at"] = now.isoformat(timespec="seconds")
     ko = [n for n, v in status.items() if not v]
-    n = state.get("hb_alerts", 0)
-    since = "depuis le dernier point" if last else "depuis le démarrage"
-    lines = [
-        f"✅ <b>Bot actif</b> · {paris:%H:%M} · vérifie toutes les 60 s",
-        "🟢 " + ", ".join(ok) if ok else "",
-        ("⚠️ Hors service : " + ", ".join(ko)) if ko else "",
-        f"📨 {n} alerte{'s' if n > 1 else ''} {since}",
-    ]
-    send(chat_ids, "\n".join(l for l in lines if l))
-    state["hb_last"] = now.isoformat()
-    state["hb_alerts"] = 0
+    text = f"🟢 <b>BOT ACTIF</b> · vérifié à {_paris_now():%H:%M}"
+    if ko:
+        text += "\n⚠️ Hors service : " + ", ".join(ko)
+    ids = state.setdefault("status_msg", {})
+    for cid in chat_ids:
+        mid = ids.get(cid)
+        if mid and move:
+            if not tg("deleteMessage", chat_id=cid, message_id=mid).get("ok"):
+                # trop ancien pour être supprimé (> 48 h) : on le marque périmé
+                tg("editMessageText", chat_id=cid, message_id=mid, text="⚪ ancien statut (voir plus bas)")
+            mid = None
+        if mid:
+            r = tg("editMessageText", chat_id=cid, message_id=mid, text=text, parse_mode="HTML")
+            if r.get("ok") or "not modified" in r.get("description", ""):
+                continue
+        r = tg("sendMessage", chat_id=cid, text=text, parse_mode="HTML", disable_notification=True)
+        if r.get("ok"):
+            ids[cid] = r["result"]["message_id"]
+
+
+def announce_restart(state: dict):
+    """Au démarrage : si la surveillance avait signalé « INACTIF », on prévient du retour."""
+    try:
+        wd = json.loads(WATCHDOG_FILE.read_text())
+    except Exception:
+        return
+    if not wd.get("alerted") or state.get("back_announced") == wd.get("down_since"):
+        return
+    chat_ids = resolve_chat_ids(state)
+    send(chat_ids, "🟢 <b>BOT DE NOUVEAU ACTIF</b> · il a redémarré, la surveillance reprend.")
+    state["back_announced"] = wd.get("down_since")
+    state["status_move"] = True
+    save_state(state)
 
 
 def run_once(demo: bool = False, oge: bool = True) -> bool:
@@ -409,7 +429,6 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
             for msg in mod.check(state, log=slog):
                 send(chat_ids, msg)
                 sent_any = True
-                state["hb_alerts"] = state.get("hb_alerts", 0) + 1
             save_state(state)
         except Exception as ex:
             log(f"{name} : erreur {ex!r}")
@@ -417,7 +436,7 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
         if errors and name == "Truth Social":
             continue  # bloqué depuis GitHub Actions : normal, on ne l'affiche pas
         status[name] = not errors
-    heartbeat(state, chat_ids, status)
+    update_status(state, chat_ids, status, move=sent_any or state.pop("status_move", False))
 
     # 2) Déclarations OGE (peut prendre quelques minutes à cause de l'OCR).
     if (not oge or not OGE_ENABLED) and state.get("initialized"):
@@ -487,6 +506,10 @@ def main():
     ap.add_argument("--git-commit", action="store_true", help="enregistre state.json dans git à chaque changement")
     ap.add_argument("--demo", action="store_true", help="envoie la dernière déclaration pour tester")
     args = ap.parse_args()
+    state = load_state()
+    state["status_move"] = True  # nouveau lancement : statut renvoyé tout en bas
+    save_state(state)
+    announce_restart(state)
     if not args.loop:
         run_once(demo=args.demo)
         if args.git_commit:
