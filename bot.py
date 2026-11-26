@@ -39,6 +39,7 @@ from urllib.parse import urljoin
 
 import requests
 
+import analyse_ia
 import delay
 import sources_btc
 import sources_companies
@@ -403,6 +404,36 @@ def announce_restart(state: dict):
     save_state(state)
 
 
+IA_MAX_OPS = int(os.environ.get("IA_MAX_OPS") or "40")  # analyses d'opérations max par jour
+
+
+def ia_comment(state: dict, chat_ids: list[str], alert: str):
+    """Avis de l'IA sur une opération, envoyé juste APRÈS l'alerte (qui part sans attendre)."""
+    if not analyse_ia.enabled():
+        return
+    day = _paris_now().strftime("%Y-%m-%d")
+    if state.get("ia_day") != day:
+        state["ia_day"], state["ia_count"] = day, 0
+    if state["ia_count"] >= IA_MAX_OPS:
+        return
+    state["ia_count"] += 1
+    text = html.unescape(re.sub(r"<[^>]+>", "", alert))
+    try:
+        a = analyse_ia.analyse(text, [], kind="operation")
+    except Exception as ex:
+        log(f"Avis IA indisponible ({type(ex).__name__})")
+        return
+    if not a:
+        return
+    msg = (
+        "🤖 <b>Avis de l'IA sur l'opération ci-dessus</b>\n"
+        f"{analyse_ia.format_block(a)}\n"
+        "⚠️ <i>Estimation automatique par IA, pas un conseil d'investissement.</i>"
+    )
+    for cid in chat_ids:
+        tg("sendMessage", chat_id=cid, text=msg, parse_mode="HTML", disable_web_page_preview=True, disable_notification=True)
+
+
 def run_once(demo: bool = False, oge: bool = True) -> bool:
     state = load_state()
     # Premier lancement = jamais initialisé ET aucune déclaration encore vue.
@@ -429,6 +460,8 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
             for msg in mod.check(state, log=slog):
                 send(chat_ids, msg)
                 sent_any = True
+                if name != "Truth Social":  # les posts ont déjà leur analyse
+                    ia_comment(state, chat_ids, msg)
             save_state(state)
         except Exception as ex:
             log(f"{name} : erreur {ex!r}")
