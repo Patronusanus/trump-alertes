@@ -17,6 +17,7 @@ import html
 import json
 import os
 import re
+import time
 
 import requests
 
@@ -112,12 +113,16 @@ def _gemini(text: str, markets_hint: list[str]) -> dict | None:
             payload = dict(body, generationConfig=cfg)
             if i:
                 payload["contents"] = [{"role": "user", "parts": [{"text": _prompt(text, markets_hint) + hint}]}]
-            r = requests.post(
-                GEMINI_URL.format(model),
-                headers={"x-goog-api-key": _gemini_key(), "Content-Type": "application/json"},
-                json=payload,
-                timeout=90,
-            )
+            for attempt in range(3):  # 503 = modèle surchargé, souvent quelques secondes
+                r = requests.post(
+                    GEMINI_URL.format(model),
+                    headers={"x-goog-api-key": _gemini_key(), "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=90,
+                )
+                if r.status_code not in (500, 503):
+                    break
+                time.sleep(5 * (attempt + 1))
             last = f"{model} HTTP {r.status_code}"
             if r.status_code == 400 and i == 0:
                 continue  # schéma refusé : on réessaie sans
