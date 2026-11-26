@@ -69,6 +69,8 @@ jobs:
           SEC_COMPANIES: ${{ secrets.SEC_COMPANIES }}
           OGE_ENABLED: ${{ secrets.OGE_ENABLED }}
           HEARTBEAT_HOURS: ${{ secrets.HEARTBEAT_HOURS }}
+          # Analyse IA des posts de Trump (optionnel, payant) : https://console.anthropic.com
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python bot.py --loop 60 --max-minutes 330 --git-commit ${{ inputs.demo && '--demo' || '' }}
 
       - name: Sauvegarder l'état
