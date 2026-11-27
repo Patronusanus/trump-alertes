@@ -11,6 +11,8 @@ Ce portefeuille reçoit énormément de « spam » (jetons sans valeur envoyés 
 des inconnus). On ne signale donc que :
   - les opérations ENVOYÉES par le portefeuille (c'est lui qui agit) ;
   - les jetons reçus ayant une vraie valeur (≥ CRYPTO_MIN_USD, 1 000 $ par défaut).
+Et seulement les mouvements d'au moins CRYPTO_IMPACT_MIN_USD (1 M$ par défaut)
+ou CRYPTO_IMPACT_MIN_ETH (300 ETH) : en dessous, aucun effet sur les marchés.
 
 Un échange (envoi d'un jeton + réception d'un autre dans la même transaction)
 est affiché comme un ordre : « 🔄 ACHAT X · VENTE Y ».
@@ -39,6 +41,10 @@ for item in filter(None, (x.strip() for x in os.environ.get("WATCH_WALLETS", "")
 
 API = "https://eth.blockscout.com/api/v2"
 MIN_USD = float(os.environ.get("CRYPTO_MIN_USD", "1000"))
+# Seuls les mouvements assez gros pour peser sur un marché sont envoyés à l'IA
+# (la trésorerie World Liberty fait des dizaines de petits transferts par heure).
+IMPACT_MIN_USD = float(os.environ.get("CRYPTO_IMPACT_MIN_USD", "1000000"))
+IMPACT_MIN_ETH = float(os.environ.get("CRYPTO_IMPACT_MIN_ETH", "300"))
 _s = requests.Session()
 _s.headers.update({"User-Agent": "Mozilla/5.0 (disclosure-alert-bot)"})
 
@@ -160,6 +166,8 @@ def _describe_tokens(low, label, tx, items) -> str | None:
     ins = [l for l in legs if not l[0] and l[3] is not None and l[3] >= MIN_USD]
     ins_any = [l for l in legs if not l[0] and l[3] is not None]
     ts = items[0].get("timestamp", "")
+    if max((l[3] or 0 for l in legs), default=0) < IMPACT_MIN_USD:
+        return None  # montant trop faible (ou inconnu) pour bouger un marché
     if outs and ins_any:  # échange dans la même transaction = un ordre
         best_in = max(ins_any, key=lambda l: l[3] or 0)
         best_out = max(outs, key=lambda l: l[3] or 0)
@@ -181,6 +189,8 @@ def _describe_tokens(low, label, tx, items) -> str | None:
 def _describe_tx(low, label, t) -> str | None:
     eth = int(t.get("value") or 0) / 1e18
     ts = t.get("timestamp") or ""
+    if eth < IMPACT_MIN_ETH:
+        return None  # trop petit pour bouger un marché
     if (t.get("from") or {}).get("hash", "").lower() != low:
         if eth < float(os.environ.get("CRYPTO_MIN_ETH", "0.5")):
             return None
