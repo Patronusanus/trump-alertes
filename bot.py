@@ -166,7 +166,7 @@ def resolve_chat_ids(state: dict) -> list[str]:
     return state["chat_ids"]
 
 
-def send(chat_ids: list[str], text: str, csv_file: tuple[str, bytes] | None = None):
+def send(chat_ids: list[str], text: str, csv_file: tuple[str, bytes] | None = None, silent: bool = False):
     for chunk in split_message(text):
         for cid in chat_ids:
             tg(
@@ -175,6 +175,7 @@ def send(chat_ids: list[str], text: str, csv_file: tuple[str, bytes] | None = No
                 text=chunk,
                 parse_mode="HTML",
                 disable_web_page_preview=True,
+                disable_notification=silent,
             )
             time.sleep(0.4)
     if csv_file:
@@ -404,34 +405,40 @@ def announce_restart(state: dict):
     save_state(state)
 
 
-IA_MAX_OPS = int(os.environ.get("IA_MAX_OPS") or "40")  # analyses d'opérations max par jour
+IA_MAX_PER_DAY = int(os.environ.get("IA_MAX_PER_DAY") or "300")  # analyses IA max par jour
 
 
-def ia_comment(state: dict, chat_ids: list[str], alert: str):
-    """Avis de l'IA sur une opération, envoyé juste APRÈS l'alerte (qui part sans attendre)."""
-    if not analyse_ia.enabled():
-        return
+def deliver(state: dict, chat_ids: list[str], source: str, alert: str) -> bool:
+    """Filtre par l'IA : seules les alertes à impact FORT sont envoyées (avec son).
+
+    Si l'IA est indisponible (pas de clé, quota, panne), l'alerte part quand même
+    mais SANS son, pour ne rien perdre.
+    """
+    a, why = None, ""
     day = _paris_now().strftime("%Y-%m-%d")
     if state.get("ia_day") != day:
         state["ia_day"], state["ia_count"] = day, 0
-    if state["ia_count"] >= IA_MAX_OPS:
-        return
-    state["ia_count"] += 1
-    text = html.unescape(re.sub(r"<[^>]+>", "", alert))
-    try:
-        a = analyse_ia.analyse(text, [], kind="operation")
-    except Exception as ex:
-        log(f"Avis IA indisponible ({type(ex).__name__})")
-        return
-    if not a:
-        return
-    msg = (
-        "🤖 <b>Avis de l'IA sur l'opération ci-dessus</b>\n"
-        f"{analyse_ia.format_block(a)}\n"
-        "⚠️ <i>Estimation automatique par IA, pas un conseil d'investissement.</i>"
-    )
-    for cid in chat_ids:
-        tg("sendMessage", chat_id=cid, text=msg, parse_mode="HTML", disable_web_page_preview=True, disable_notification=True)
+    if not analyse_ia.enabled():
+        why = "IA non configurée"
+    elif state["ia_count"] >= IA_MAX_PER_DAY:
+        why = "quota IA du jour atteint"
+    else:
+        state["ia_count"] += 1
+        kind = "post" if source == "Truth Social" else "operation"
+        try:
+            a = analyse_ia.analyse(html.unescape(re.sub(r"<[^>]+>", "", alert)), [], kind=kind)
+        except Exception as ex:
+            log(f"Analyse IA indisponible ({type(ex).__name__})")
+        if not a:
+            why = "analyse IA indisponible"
+    if a is None:
+        send(chat_ids, alert + f"\n<i>({why} : envoyé sans son)</i>", silent=True)
+        return True
+    if a.get("impact") != "fort":
+        log(f"{source} : impact {a.get('impact')} → pas d'alerte")
+        return False
+    send(chat_ids, analyse_ia.high_alert(alert, a))
+    return True
 
 
 def run_once(demo: bool = False, oge: bool = True) -> bool:
@@ -458,10 +465,8 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
 
         try:
             for msg in mod.check(state, log=slog):
-                send(chat_ids, msg)
-                sent_any = True
-                if name != "Truth Social":  # les posts ont déjà leur analyse
-                    ia_comment(state, chat_ids, msg)
+                if deliver(state, chat_ids, name, msg):
+                    sent_any = True
             save_state(state)
         except Exception as ex:
             log(f"{name} : erreur {ex!r}")
