@@ -2607,7 +2607,5 @@
  "status_msg": {
   "5469478113": 105
  },
- "crypto_fails": {
-  "0x94845333028b1204fbe14e1278fd4adde46b22ce": 1
- }
+ "crypto_fails": {}
 }
