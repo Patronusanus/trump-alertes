@@ -36,7 +36,9 @@ SYSTEM = (
     "dans quel sens, et avec quelle probabilité. Appuie-toi sur les réactions passées des marchés à des "
     "annonces comparables. Si le post n'a probablement aucun effet, dis-le (impact « nul »). "
     "N'invente pas de chiffres précis. Ne donne aucune recommandation d'achat ou de vente : décris "
-    "seulement les mouvements les plus probables. Réponds en français, phrases très courtes."
+    "seulement les mouvements les plus probables. Pour chaque actif, donne son symbole négociable. "
+    "Réserve l'impact « fort » aux cas où un mouvement net et rapide est vraiment probable. "
+    "Réponds en français, phrases très courtes."
 )
 
 SYSTEM_OP = (
@@ -48,13 +50,19 @@ SYSTEM_OP = (
     "routine...), puis estime de façon factuelle et prudente son impact probable sur les marchés à "
     "court terme : quels actifs pourraient bouger, dans quel sens, avec quelle probabilité. Beaucoup "
     "d'opérations n'ont aucun effet : dis-le (impact « nul »). N'invente pas de chiffres. Ne donne "
-    "aucune recommandation d'achat ou de vente. Réponds en français, phrases très courtes."
+    "aucune recommandation d'achat ou de vente. Pour chaque actif, donne son symbole négociable. "
+    "Réserve l'impact « fort » aux cas où un mouvement net et rapide est vraiment probable. "
+    "Réponds en français, phrases très courtes."
 )
 
 SCHEMA = {
     "type": "object",
     "properties": {
-        "impact": {"type": "string", "enum": ["nul", "faible", "moyen", "fort"]},
+        "impact": {
+            "type": "string",
+            "enum": ["nul", "faible", "moyen", "fort"],
+            "description": "« fort » seulement si un mouvement net et rapide d'au moins un actif est probable.",
+        },
         "resume": {"type": "string", "description": "Une phrase : ce que le marché retiendra de ce post."},
         "mouvements": {
             "type": "array",
@@ -63,11 +71,17 @@ SCHEMA = {
                 "type": "object",
                 "properties": {
                     "actif": {"type": "string", "description": "ex. S&P 500, Nasdaq, yuan, Bitcoin, Tesla (TSLA), pétrole"},
-                    "sens": {"type": "string", "enum": ["hausse", "baisse", "volatilité"]},
+                    "ticker": {
+                        "type": "string",
+                        "description": "Symbole négociable : action US (TSLA, DJT), crypto (BTC, ETH), "
+                        "ETF pour un indice ou une matière (SPY, QQQ, GLD, USO), paire de devises (EURUSD). Vide si aucun.",
+                    },
+                    "categorie": {"type": "string", "enum": ["action", "crypto", "etf", "devise", "autre"]},
+                    "sens": {"type": "string", "enum": ["hausse", "baisse"]},
                     "probabilite": {"type": "string", "enum": ["faible", "moyenne", "élevée"]},
                     "pourquoi": {"type": "string", "description": "Raison en moins de 12 mots."},
                 },
-                "required": ["actif", "sens", "probabilite", "pourquoi"],
+                "required": ["actif", "ticker", "categorie", "sens", "probabilite", "pourquoi"],
                 "additionalProperties": False,
             },
         },
@@ -78,6 +92,18 @@ SCHEMA = {
 
 IMPACT = {"nul": "⚪ NUL", "faible": "🟡 FAIBLE", "moyen": "🟠 MOYEN", "fort": "🔴 FORT"}
 SENS = {"hausse": "📈", "baisse": "📉", "volatilité": "↕️"}
+
+# Pages où passer l'ordre (modifiables : secrets TRADE_URL_ACTION / TRADE_URL_CRYPTO).
+TRADE_URL_ACTION = os.environ.get("TRADE_URL_ACTION") or "https://www.etoro.com/markets/{t}"
+TRADE_URL_CRYPTO = os.environ.get("TRADE_URL_CRYPTO") or "https://www.binance.com/fr/trade/{T}_USDT"
+
+
+def trade_link(m: dict) -> str | None:
+    t = re.sub(r"[^A-Za-z0-9.]", "", m.get("ticker") or "")
+    if not t:
+        return None
+    tpl = TRADE_URL_CRYPTO if m.get("categorie") == "crypto" else TRADE_URL_ACTION
+    return tpl.format(t=t.lower(), T=t.upper())
 
 _client = None
 
@@ -190,4 +216,27 @@ def format_block(a: dict) -> str:
         )
     if a.get("resume"):
         lines.append(f"💬 {html.escape(a['resume'])}")
+    return "\n".join(lines)
+
+
+def high_alert(original: str, a: dict) -> str:
+    """Alerte complète pour un impact FORT : tendance, actif, liens pour trader."""
+    moves = a.get("mouvements", [])[:3]
+    top = moves[0] if moves else {}
+    sens = top.get("sens", "")
+    head = (
+        f"🚨 <b>IMPACT FORT</b> · {SENS.get(sens, '')} <b>{html.escape(sens.upper())} probable</b> : "
+        f"<b>{html.escape(top.get('actif', '?'))}</b>"
+        + (f" ({html.escape(top['ticker'].upper())})" if top.get("ticker") else "")
+    )
+    links = []
+    for m in moves:
+        url = trade_link(m)
+        if url and url not in [u for u, _ in links]:
+            label = f"{SENS.get(m.get('sens'), '')} {m.get('ticker', '').upper()}"
+            links.append((url, label))
+    lines = [head, "", original, "", format_block(a)]
+    if links:
+        lines.append("🔗 Trader : " + " · ".join(f'<a href="{html.escape(u)}">{html.escape(l)}</a>' for u, l in links))
+    lines.append("⚠️ <i>Tendance estimée par IA, pas un conseil d'investissement.</i>")
     return "\n".join(lines)
