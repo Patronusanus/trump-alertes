@@ -406,39 +406,86 @@ def announce_restart(state: dict):
 
 
 IA_MAX_PER_DAY = int(os.environ.get("IA_MAX_PER_DAY") or "300")  # analyses IA max par jour
+IA_RETRY_HOURS = float(os.environ.get("IA_RETRY_HOURS") or "6")  # au-delà, alerte abandonnée
+_last_ia = 0.0
+_ia_pause_until = 0.0  # après un échec, on laisse l'IA souffler 2 min
 
 
-def deliver(state: dict, chat_ids: list[str], source: str, alert: str) -> bool:
-    """Filtre par l'IA : seules les alertes à impact FORT sont envoyées (avec son).
-
-    Si l'IA est indisponible (pas de clé, quota, panne), l'alerte part quand même
-    mais SANS son, pour ne rien perdre.
-    """
-    a, why = None, ""
+def _analyse(state: dict, source: str, alert: str) -> tuple[dict | None, str]:
+    """Analyse IA d'une alerte. Renvoie (analyse, raison si indisponible)."""
+    global _last_ia, _ia_pause_until
     day = _paris_now().strftime("%Y-%m-%d")
     if state.get("ia_day") != day:
         state["ia_day"], state["ia_count"] = day, 0
-    if not analyse_ia.enabled():
-        why = "IA non configurée"
-    elif state["ia_count"] >= IA_MAX_PER_DAY:
-        why = "quota IA du jour atteint"
-    else:
-        state["ia_count"] += 1
-        kind = "post" if source == "Truth Social" else "operation"
-        try:
-            a = analyse_ia.analyse(html.unescape(re.sub(r"<[^>]+>", "", alert)), [], kind=kind)
-        except Exception as ex:
-            log(f"Analyse IA indisponible ({type(ex).__name__})")
-        if not a:
-            why = "analyse IA indisponible"
-    if a is None:
-        send(chat_ids, alert + f"\n<i>({why} : envoyé sans son)</i>", silent=True)
-        return True
+    if state["ia_count"] >= IA_MAX_PER_DAY:
+        return None, "quota IA du jour atteint"
+    if time.time() < _ia_pause_until:
+        return None, "IA en pause après un échec"
+    # Gemini gratuit : 15 requêtes/minute max → au moins 5 s entre deux analyses.
+    wait = 5 - (time.time() - _last_ia)
+    if wait > 0:
+        time.sleep(wait)
+    _last_ia = time.time()
+    state["ia_count"] += 1
+    kind = "post" if source == "Truth Social" else "operation"
+    try:
+        a = analyse_ia.analyse(html.unescape(re.sub(r"<[^>]+>", "", alert)), [], kind=kind)
+    except Exception as ex:
+        log(f"Analyse IA indisponible ({str(ex)[:120] or type(ex).__name__})")
+        _ia_pause_until = time.time() + 120
+        return None, "analyse IA indisponible"
+    return (a, "") if a else (None, "analyse IA refusée")
+
+
+def _send_if_strong(chat_ids: list[str], source: str, alert: str, a: dict) -> bool:
     if a.get("impact") != "fort":
         log(f"{source} : impact {a.get('impact')} → pas d'alerte")
         return False
     send(chat_ids, analyse_ia.high_alert(alert, a))
     return True
+
+
+def deliver(state: dict, chat_ids: list[str], source: str, alert: str) -> bool:
+    """Filtre par l'IA : seules les alertes à impact FORT sont envoyées (avec son).
+
+    Si l'IA est momentanément indisponible (quota, surcharge), l'alerte est mise
+    de côté et réanalysée aux passages suivants (pendant IA_RETRY_HOURS), au
+    lieu d'être envoyée sans analyse.
+    """
+    if not analyse_ia.enabled():
+        send(chat_ids, alert + "\n<i>(IA non configurée : envoyé sans son)</i>", silent=True)
+        return True
+    a, why = _analyse(state, source, alert)
+    if a is None:
+        state.setdefault("ia_pending", []).append(
+            {"source": source, "alert": alert, "t": time.time()}
+        )
+        log(f"{source} : {why} → mise en attente, nouvel essai au prochain passage")
+        return False
+    return _send_if_strong(chat_ids, source, alert, a)
+
+
+def retry_pending(state: dict, chat_ids: list[str], max_items: int = 5) -> bool:
+    """Réessaie l'analyse des alertes mises de côté (les plus anciennes d'abord)."""
+    pending = state.get("ia_pending") or []
+    if not pending:
+        return False
+    sent, keep = False, []
+    for i, p in enumerate(pending):
+        if time.time() - p["t"] > IA_RETRY_HOURS * 3600:
+            log(f"{p['source']} : toujours pas d'analyse IA après {IA_RETRY_HOURS:.0f} h → abandonnée")
+            continue
+        if i >= max_items:
+            keep.append(p)
+            continue
+        a, _ = _analyse(state, p["source"], p["alert"])
+        if a is None:
+            keep.append(p)
+            keep.extend(pending[i + 1:])  # IA toujours indisponible : on arrête là
+            break
+        sent |= _send_if_strong(chat_ids, p["source"], p["alert"], a)
+    state["ia_pending"] = keep[-200:]
+    return sent
 
 
 def run_once(demo: bool = False, oge: bool = True) -> bool:
@@ -452,7 +499,7 @@ def run_once(demo: bool = False, oge: bool = True) -> bool:
         return False
 
     # 1) Sources rapides d'abord (quelques secondes chacune).
-    sent_any = False
+    sent_any = retry_pending(state, chat_ids)
     status = {}
     for name, mod in FAST_SOURCES:
         errors = []
