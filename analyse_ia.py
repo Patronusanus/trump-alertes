@@ -153,16 +153,23 @@ def _gemini(text: str, markets_hint: list[str], kind: str = "post") -> dict | No
             payload = dict(body, generationConfig=cfg)
             if i:
                 payload["contents"] = [{"role": "user", "parts": [{"text": _prompt(text, markets_hint, kind) + hint}]}]
-            for attempt in range(3):  # 503 = modèle surchargé, souvent quelques secondes
-                r = requests.post(
-                    GEMINI_URL.format(model),
-                    headers={"x-goog-api-key": _gemini_key(), "Content-Type": "application/json"},
-                    json=payload,
-                    timeout=90,
-                )
+            r = None
+            for attempt in range(2):  # 503 = modèle surchargé, souvent quelques secondes
+                try:
+                    r = requests.post(
+                        GEMINI_URL.format(model),
+                        headers={"x-goog-api-key": _gemini_key(), "Content-Type": "application/json"},
+                        json=payload,
+                        timeout=45,
+                    )
+                except requests.RequestException as ex:  # délai dépassé, coupure réseau
+                    r, last = None, f"{model} {type(ex).__name__}"
+                    break
                 if r.status_code not in (500, 503):
                     break
-                time.sleep(5 * (attempt + 1))
+                time.sleep(4 * (attempt + 1))
+            if r is None:
+                break  # modèle trop lent : modèle suivant
             last = f"{model} HTTP {r.status_code}"
             if r.status_code == 400 and i == 0:
                 continue  # schéma refusé : on réessaie sans
