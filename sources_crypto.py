@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import html
 import os
+import time
 
 import requests
 
@@ -43,7 +44,17 @@ _s.headers.update({"User-Agent": "Mozilla/5.0 (disclosure-alert-bot)"})
 
 
 def _get(path, **params):
-    r = _s.get(API + path, params=params, timeout=30)
+    # Blockscout renvoie parfois des erreurs 500 passagères : 3 essais.
+    for attempt in range(3):
+        try:
+            r = _s.get(API + path, params=params, timeout=30)
+            if r.status_code < 500:
+                r.raise_for_status()
+                return r.json()
+        except requests.RequestException:
+            if attempt == 2:
+                raise
+        time.sleep(2 * (attempt + 1))
     r.raise_for_status()
     return r.json()
 
@@ -79,8 +90,15 @@ def check(state: dict, log=print) -> list[str]:
             toks = _get(f"/addresses/{addr}/token-transfers").get("items", [])
             txs = _get(f"/addresses/{addr}/transactions").get("items", [])
         except Exception as ex:
-            log(f"Crypto {label} : erreur {ex!r}")
+            # Hors service seulement si l'échec dure (≥ 5 passages d'affilée, ~5 min).
+            fails = state.setdefault("crypto_fails", {})
+            fails[low] = fails.get(low, 0) + 1
+            if fails[low] >= 5:
+                log(f"Crypto {label} : erreur {ex!r}")
+            else:
+                log(f"Crypto {label} : Blockscout ne répond pas ({type(ex).__name__}), nouvel essai au prochain passage")
             continue
+        state.get("crypto_fails", {}).pop(low, None)
         ready.add(low)
         # Regroupe les transferts de jetons par transaction (pour voir les échanges).
         groups: dict[str, list] = {}
