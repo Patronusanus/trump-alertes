@@ -2780,9 +2780,7 @@
  "status_msg": {
   "5469478113": 137
  },
- "crypto_fails": {
-  "0x5be9a4959308a0d0c7bc0870e319314d8d957dbb": 1
- },
+ "crypto_fails": {},
  "ia_day": "2026-11-27",
  "ia_count": 67
 }
